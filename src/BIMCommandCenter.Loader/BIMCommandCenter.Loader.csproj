@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>BIMCommandCenter.Loader</AssemblyName>
+    <RootNamespace>BIMCommandCenter.Loader</RootNamespace>
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\build\$(RevitVersion)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,11 @@
+{
+  "catalogSource": "data/sample_catalog.json",
+  "catalogSheet": "",
+  "scriptsRoot": "",
+  "ideasEndpoint": "",
+  "ideasFolder": "",
+  "frontendUrl": "",
+  "aiEndpoint": "",
+  "updateSource": "",
+  "cacheMinutes": 30
+}

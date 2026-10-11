@@ -1,0 +1,12 @@
+# Build and intermediate outputs
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+bin/Debug/
+*.log
+
+# Keep build releases, dist installer, and PDFs tracked
+!dist/
+!build/

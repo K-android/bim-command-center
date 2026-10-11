@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>BIMCommandCenter.Core</AssemblyName>
+    <RootNamespace>BIMCommandCenter.Core</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\build\$(RevitVersion)\core\</OutputPath>
+    <!-- Put WebView2Loader.dll next to our dll; we point WebView2 at it explicitly -->
+    <WebView2LoaderPreference>Dynamic</WebView2LoaderPreference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <!-- Ship the web UI, sample data and config alongside the dll -->
+  <ItemGroup>
+    <None Include="..\..\frontend\**\*" LinkBase="frontend" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\config\config.json" Link="config.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\dummy_catalog.json" Link="data\sample_catalog.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="WriteVersionFile" AfterTargets="Build">
+    <WriteLinesToFile File="$(OutputPath)version.txt" Lines="$(Version)" Overwrite="true" />
+  </Target>
+</Project>

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BIM Command Center</title>
+  <!-- Vendored locally so the panel works without internet -->
+  <script src="vendor/tailwind.js"></script>
+  <script src="vendor/lucide.min.js"></script>
+  <style>
+    body { font-family: "Segoe UI", -apple-system, Roboto, sans-serif; }
+    .scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .fade-in { animation: fade .18s ease-out; }
+    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px]">
+
+  <!-- HEADER -->
+  <header class="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between gap-2 shrink-0">
+    <div class="flex items-center gap-2 min-w-0">
+      <div class="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center shrink-0"><i data-lucide="layout-grid" class="w-4 h-4"></i></div>
+      <div class="min-w-0">
+        <div class="font-semibold text-sm leading-tight">BIM Command Center</div>
+        <div id="ctx-line" class="text-[11px] text-slate-400 truncate">Connecting…</div>
+      </div>
+    </div>
+    <button onclick="openIdeaModal()" title="Request an automation" class="flex items-center gap-1 bg-amber-400 hover:bg-amber-500 text-slate-900 font-semibold px-2.5 py-1.5 rounded-md text-xs shrink-0">
+      <i data-lucide="lightbulb" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Request</span>
+    </button>
+  </header>
+
+  <!-- TABS -->
+  <nav class="bg-white border-b border-slate-200 px-3 flex gap-1 shrink-0">
+    <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700 flex items-center gap-1.5"><i data-lucide="grid-2x2" class="w-3.5 h-3.5"></i>Tools</button>
+    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5"><i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>Copilot</button>
+    <div class="flex-1"></div>
+    <button onclick="loadCatalog(true)" title="Refresh catalog" class="text-slate-400 hover:text-slate-700 px-2"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i></button>
+  </nav>
+
+  <div id="banner" class="hidden bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-2"></div>
+
+  <!-- TOOLS VIEW -->
+  <main id="view-tools" class="flex-1 overflow-y-auto scroll">
+    <section class="bg-gradient-to-br from-blue-900 to-slate-900 text-white px-4 pt-5 pb-6">
+      <h1 class="text-lg font-bold">What are we solving today?</h1>
+      <p class="text-[12px] text-slate-300 mt-0.5">Search firm tools, or pick a category.</p>
+      <div class="relative mt-3">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+        <input id="search" type="text" oninput="render()" placeholder="e.g. renumber doors, purge rooms, export PDF…"
+               class="w-full bg-white text-slate-900 pl-9 pr-8 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2 top-2 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <button onclick="askCopilotFromSearch()" class="mt-2 text-[11px] text-blue-200 hover:text-white inline-flex items-center gap-1">
+        <i data-lucide="sparkles" class="w-3 h-3"></i>Or describe the problem to the Copilot
+      </button>
+    </section>
+
+    <section class="p-4 space-y-4">
+      <div id="categories" class="grid grid-cols-3 gap-2"></div>
+      <div class="flex items-center justify-between">
+        <div id="list-title" class="text-xs font-semibold text-slate-500 uppercase tracking-wide">All tools</div>
+        <button id="back-all" onclick="setCategory('All')" class="hidden text-xs text-blue-600 font-semibold">Show all</button>
+      </div>
+      <div id="tools" class="space-y-2"></div>
+    </section>
+  </main>
+
+  <!-- COPILOT VIEW -->
+  <main id="view-ai" class="hidden flex-1 flex flex-col min-h-0">
+    <div id="chat" class="flex-1 overflow-y-auto scroll p-4 space-y-3"></div>
+
+    <div id="attach-tray" class="hidden px-3 py-2 border-t border-slate-200 bg-white flex items-center gap-2">
+      <img id="attach-thumb" class="hidden w-12 h-9 object-cover rounded border border-slate-200" alt="">
+      <span id="attach-name" class="text-xs text-slate-600 truncate flex-1"></span>
+      <button onclick="clearAttachment()" class="text-slate-400 hover:text-red-600"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+
+    <div class="px-3 py-2 border-t border-slate-100 bg-slate-50 flex gap-1.5 overflow-x-auto scroll" id="chips"></div>
+
+    <div class="p-3 border-t border-slate-200 bg-white flex items-center gap-2">
+      <button onclick="captureViewport()" title="Attach active view" class="text-slate-500 hover:text-blue-600 p-1.5"><i data-lucide="camera" class="w-4 h-4"></i></button>
+      <label title="Attach PDF" class="text-slate-500 hover:text-blue-600 p-1.5 cursor-pointer"><i data-lucide="paperclip" class="w-4 h-4"></i>
+        <input type="file" accept=".pdf" class="hidden" onchange="attachPdf(event)">
+      </label>
+      <input id="chat-input" type="text" placeholder="Ask or describe a task…" onkeydown="if(event.key==='Enter') sendChat()"
+             class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg"><i data-lucide="send" class="w-4 h-4"></i></button>
+    </div>
+  </main>
+
+  <!-- IDEA MODAL -->
+  <div id="idea-modal" class="hidden fixed inset-0 bg-slate-950/50 z-40 flex items-center justify-center p-3">
+    <form onsubmit="submitIdea(event)" class="bg-white rounded-xl w-full max-w-md shadow-2xl fade-in">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div class="font-semibold flex items-center gap-2"><i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>Request an automation</div>
+        <button type="button" onclick="closeIdeaModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="p-4 space-y-3">
+        <label class="block"><span class="text-xs font-semibold text-slate-600">What should be automated? *</span>
+          <input id="idea-title" required class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="e.g. Batch align title block revisions"></label>
+        <label class="block"><span class="text-xs font-semibold text-slate-600">Category</span>
+          <select id="idea-category" class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md">
+            <option>Documentation</option><option>Model Audit</option><option>Geometry</option><option>QA/QC</option><option>Export</option><option>Setup</option><option>Other</option>
+          </select></label>
+        <label class="block"><span class="text-xs font-semibold text-slate-600">The problem & time spent today *</span>
+          <textarea id="idea-problem" required rows="3" class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="How long does it take, how often, on which projects?"></textarea></label>
+        <label class="block"><span class="text-xs font-semibold text-slate-600">Your email</span>
+          <input id="idea-email" type="email" class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md" placeholder="name@company.com"></label>
+      </div>
+      <div class="px-4 py-3 border-t border-slate-100 flex justify-end gap-2">
+        <button type="button" onclick="closeIdeaModal()" class="px-3 py-1.5 text-xs text-slate-600">Cancel</button>
+        <button id="idea-submit" type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-md text-xs">Submit</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-3.5 py-2 rounded-lg shadow-xl text-xs opacity-0 pointer-events-none transition-opacity duration-200"></div>
+
+<script>
+// ======================================================================
+//  Bridge: talks to Revit (C#) through WebView2. In a normal browser it
+//  falls back to a mock so the UI can be developed without Revit.
+// ======================================================================
+const Bridge = (() => {
+  const inRevit = !!(window.chrome && window.chrome.webview);
+  const pending = new Map();
+  let seq = 0;
+
+  if (inRevit) {
+    window.chrome.webview.addEventListener('message', e => {
+      const m = e.data;
+      const p = m && pending.get(m.replyTo);
+      if (!p) return;
+      pending.delete(m.replyTo);
+      m.ok ? p.resolve(m.data) : p.reject(new Error(m.error || 'Unknown error'));
+    });
+  }
+
+  function call(action, payload = {}) {
+    if (!inRevit) return Mock.call(action, payload);
+    return new Promise((resolve, reject) => {
+      const id = 'm' + (++seq);
+      pending.set(id, { resolve, reject });
+      window.chrome.webview.postMessage(JSON.stringify({ id, action, payload }));
+      const timeout = action === 'executeTool' ? 30 * 60000 : 60000;
+      setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id);
+          reject(new Error('Revit did not respond. Finish or cancel the current Revit command and try again.'));
+        }
+      }, timeout);
+    });
+  }
+  return { call, inRevit };
+})();
+
+const Mock = {
+  async call(action, payload) {
+    await new Promise(r => setTimeout(r, 250));
+    switch (action) {
+      case 'getContext': return { revitVersion: 'Browser preview', documentTitle: 'No Revit', hasDocument: false, activeView: '' };
+      case 'getCatalog': {
+        for (const url of ['data/sample_catalog.json', '../dummy_catalog.json']) {
+          try { const r = await fetch(url); if (r.ok) return { tools: await r.json(), source: url, fromCache: false, warning: '' }; } catch {}
+        }
+        return { tools: [], source: 'none', warning: 'Browser preview: open via a local web server to load sample data.' };
+      }
+      case 'executeTool': return { ok: true, message: '[Preview] Would run ' + payload.toolId + ' in Revit.' };
+      case 'captureViewport': throw new Error('Viewport capture only works inside Revit.');
+      case 'submitIdea': return { destination: '[Preview] not sent' };
+      default: throw new Error('Not available in preview: ' + action);
+    }
+  }
+};
+
+// ======================================================================
+//  State
+// ======================================================================
+let tools = [];
+let context = {};
+let activeCategory = 'All';
+let attachment = null;
+
+const CATEGORY_STYLE = {
+  'Model Audit':   { icon: 'shield-check', color: 'text-rose-600 bg-rose-50' },
+  'Documentation': { icon: 'file-text',    color: 'text-blue-600 bg-blue-50' },
+  'Geometry':      { icon: 'box',          color: 'text-violet-600 bg-violet-50' },
+  'QA/QC':         { icon: 'badge-check',  color: 'text-emerald-600 bg-emerald-50' },
+  'Export':        { icon: 'upload',       color: 'text-cyan-600 bg-cyan-50' },
+  'Setup':         { icon: 'settings',     color: 'text-slate-600 bg-slate-100' },
+};
+const catStyle = c => CATEGORY_STYLE[c] || { icon: 'layers', color: 'text-amber-600 bg-amber-50' };
+
+const ACTION_BADGE = {
+  Dynamo:          ['Dynamo',  'bg-indigo-50 text-indigo-700 border-indigo-200'],
+  PyRevit:         ['pyRevit', 'bg-amber-50 text-amber-700 border-amber-200'],
+  NativeAddin:     ['Add-in',  'bg-blue-50 text-blue-700 border-blue-200'],
+  PostableCommand: ['Revit',   'bg-emerald-50 text-emerald-700 border-emerald-200'],
+  Url:             ['Link',    'bg-slate-50 text-slate-600 border-slate-200'],
+};
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const kebab = s => String(s || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/[\s_]+/g, '-').toLowerCase();
+const icons = () => window.lucide && lucide.createIcons();
+
+// ======================================================================
+//  Startup
+// ======================================================================
+async function init() {
+  renderChips();
+  addBot(`<p><strong>Hi! I'm the BIM Copilot.</strong></p>
+          <p>Tell me what you're trying to do — e.g. <em>"renumber doors by room"</em> — and I'll find the right firm tool and ask before running it.</p>`);
+  try {
+    context = await Bridge.call('getContext');
+    document.getElementById('ctx-line').textContent =
+      `Revit ${context.revitVersion}` + (context.hasDocument ? ` · ${context.documentTitle}` : ' · no project open');
+  } catch (e) {
+    document.getElementById('ctx-line').textContent = 'Revit context unavailable';
+  }
+  await loadCatalog(false);
+  icons();
+}
+
+async function loadCatalog(refresh) {
+  try {
+    const res = await Bridge.call('getCatalog', { refresh });
+    tools = res.tools || [];
+    setBanner(res.warning);
+    if (refresh) toast(`Catalog refreshed · ${tools.length} tools`);
+  } catch (e) {
+    setBanner('Could not load the tool catalog: ' + e.message);
+  }
+  render();
+}
+
+function setBanner(text) {
+  const b = document.getElementById('banner');
+  b.textContent = text || '';
+  b.classList.toggle('hidden', !text);
+}
+
+// ======================================================================
+//  Tools view
+// ======================================================================
+function setCategory(c) { activeCategory = c; render(); document.getElementById('view-tools').scrollTo({ top: 0, behavior: 'smooth' }); }
+function clearSearch() { document.getElementById('search').value = ''; render(); }
+
+function matches(tool, q) {
+  if (!q) return true;
+  const hay = [tool.title, tool.description, tool.category, ...(tool.keywords || [])].join(' ').toLowerCase();
+  return q.split(/\s+/).every(word => hay.includes(word));
+}
+
+function render() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  document.getElementById('search-clear').classList.toggle('hidden', !q);
+
+  // Category tiles
+  const counts = {};
+  tools.forEach(t => counts[t.category] = (counts[t.category] || 0) + 1);
+  document.getElementById('categories').innerHTML = Object.keys(counts).sort().map(c => {
+    const s = catStyle(c), on = activeCategory === c;
+    return `<button onclick="setCategory('${esc(c)}')" class="rounded-xl border p-2.5 text-left transition ${on ? 'border-blue-500 ring-2 ring-blue-200 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'}">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center ${s.color}"><i data-lucide="${s.icon}" class="w-4 h-4"></i></div>
+      <div class="mt-1.5 font-semibold text-[12px] leading-tight">${esc(c)}</div>
+      <div class="text-[11px] text-slate-400">${counts[c]} tool${counts[c] === 1 ? '' : 's'}</div>
+    </button>`;
+  }).join('');
+
+  const list = tools.filter(t => (activeCategory === 'All' || t.category === activeCategory) && matches(t, q));
+  document.getElementById('list-title').textContent =
+    (q ? `Results for "${q}"` : activeCategory === 'All' ? 'All tools' : activeCategory) + ` · ${list.length}`;
+  document.getElementById('back-all').classList.toggle('hidden', activeCategory === 'All');
+
+  document.getElementById('tools').innerHTML = list.length ? list.map(toolCard).join('') : `
+    <div class="text-center py-8 text-slate-400">
+      <i data-lucide="search-x" class="w-7 h-7 mx-auto"></i>
+      <p class="mt-2 text-xs">No tool for that yet.</p>
+      <button onclick="openIdeaModal(document.getElementById('search').value)" class="mt-1 text-xs text-blue-600 font-semibold">Request it from the BIM team</button>
+    </div>`;
+  icons();
+}
+
+function toolCard(t) {
+  const [label, cls] = ACTION_BADGE[t.actionType] || [t.actionType, 'bg-slate-50 text-slate-600 border-slate-200'];
+  const icon = t.iconName ? kebab(t.iconName) : catStyle(t.category).icon;
+  const headless = t.executionMode === 'Headless';
+  return `<div class="bg-white rounded-xl border border-slate-200 p-3 hover:shadow-sm transition">
+    <div class="flex gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${catStyle(t.category).color}"><i data-lucide="${esc(icon)}" class="w-4 h-4"></i></div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-start justify-between gap-2">
+          <div class="font-semibold leading-tight">${esc(t.title)}</div>
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${cls}">${esc(label)}</span>
+        </div>
+        <p class="text-[12px] text-slate-500 mt-0.5 leading-snug">${esc(t.description)}</p>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px] text-slate-400">
+          <span class="flex items-center gap-1"><i data-lucide="${headless ? 'zap' : 'sliders-horizontal'}" class="w-3 h-3 ${headless ? 'text-emerald-500' : 'text-blue-500'}"></i>${headless ? '1-click' : 'Needs input'}</span>
+          ${t.packagesRequired ? `<span class="flex items-center gap-1"><i data-lucide="package" class="w-3 h-3"></i>${esc(t.packagesRequired)}</span>` : ''}
+          ${t.status && t.status !== 'Active' ? `<span class="text-amber-600 font-semibold">${esc(t.status)}</span>` : ''}
+          <span class="flex-1"></span>
+          <button onclick="runTool('${esc(t.toolId)}', this)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded-md flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>Run</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function runTool(toolId, btn) {
+  const tool = tools.find(t => t.toolId === toolId);
+  if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
+  try {
+    const res = await Bridge.call('executeTool', { toolId });
+    toast((res.ok ? '✓ ' : '⚠ ') + res.message, !res.ok);
+    return res;
+  } catch (e) {
+    toast('⚠ ' + e.message, true);
+    return { ok: false, message: e.message };
+  } finally {
+    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+  }
+}
+
+function askCopilotFromSearch() {
+  const q = document.getElementById('search').value.trim();
+  switchTab('ai');
+  if (q) sendChat(q);
+}
+
+// ======================================================================
+//  Copilot (local catalog matcher; swap matchTools() for an LLM call
+//  through aiEndpoint later — the confirm-before-run flow stays the same)
+// ======================================================================
+const SYNONYMS = {
+  renumber: ['number', 'numbering', 'sequence', 'mark', 'marks'],
+  purge: ['clean', 'cleanup', 'delete', 'remove', 'unused'],
+  align: ['line up', 'match', 'position'],
+  export: ['print', 'publish', 'pdf', 'dwg'],
+  sync: ['synchronize', 'central', 'save'],
+  audit: ['check', 'health', 'review', 'warnings', 'qc'],
+  openings: ['penetration', 'void', 'sleeve', 'clash'],
+};
+
+function expandQuery(q) {
+  const words = new Set(q.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2));
+  for (const [key, list] of Object.entries(SYNONYMS)) {
+    if (words.has(key) || list.some(s => q.toLowerCase().includes(s))) { words.add(key); list.forEach(s => words.add(s)); }
+  }
+  return [...words];
+}
+
+function matchTools(q) {
+  const words = expandQuery(q);
+  return tools.map(t => {
+    const title = (t.title || '').toLowerCase();
+    const kw = (t.keywords || []).map(k => k.toLowerCase());
+    const desc = (t.description || '').toLowerCase();
+    let score = 0;
+    for (const w of words) {
+      if (title.includes(w)) score += 4;
+      if (kw.some(k => k.includes(w))) score += 3;
+      if (desc.includes(w)) score += 1;
+    }
+    return { t, score };
+  }).filter(x => x.score >= 3).sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+function renderChips() {
+  const chips = ['Renumber doors by room', 'Purge unplaced rooms', 'Align viewports on sheets', 'Export sheets to PDF', 'Sync with central'];
+  document.getElementById('chips').innerHTML = chips.map(c =>
+    `<button onclick="sendChat('${esc(c)}')" class="bg-white hover:bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 whitespace-nowrap text-[11px]">${esc(c)}</button>`).join('');
+}
+
+function addUser(text, att) {
+  const chat = document.getElementById('chat');
+  chat.insertAdjacentHTML('beforeend', `<div class="flex justify-end fade-in"><div class="bg-blue-600 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%] space-y-1.5">
+    ${att && att.dataUrl ? `<img src="${att.dataUrl}" class="rounded-md max-h-40">` : ''}
+    ${att && !att.dataUrl ? `<div class="text-[11px] bg-blue-700/60 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><i data-lucide="paperclip" class="w-3 h-3"></i>${esc(att.name)}</div>` : ''}
+    ${text ? `<p>${esc(text)}</p>` : ''}</div></div>`);
+  scrollChat();
+}
+
+function addBot(html, id) {
+  const chat = document.getElementById('chat');
+  chat.insertAdjacentHTML('beforeend', `<div ${id ? `id="${id}"` : ''} class="flex gap-2 fade-in">
+    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5"><i data-lucide="sparkles" class="w-3 h-3"></i></div>
+    <div class="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-3 py-2 max-w-[88%] space-y-2 text-slate-800">${html}</div></div>`);
+  scrollChat();
+  icons();
+}
+
+function scrollChat() { const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
+
+function sendChat(preset) {
+  const input = document.getElementById('chat-input');
+  const text = (preset ?? input.value).trim();
+  if (!text && !attachment) return;
+  input.value = '';
+  const att = attachment; clearAttachment();
+  addUser(text, att);
+
+  const typingId = 't' + Date.now();
+  addBot(`<span class="text-slate-400 text-xs">Searching the firm catalog…</span>`, typingId);
+
+  setTimeout(() => {
+    document.getElementById(typingId)?.remove();
+    respond(text, att);
+  }, 400);
+}
+
+function respond(text, att) {
+  if (!text && att) {
+    addBot(`<p>Got the ${att.dataUrl ? 'view capture' : 'PDF'}. What would you like to do with it?</p>
+            <p class="text-[11px] text-slate-400">Image/PDF analysis needs the AI service connected (aiEndpoint in config). For now I can find and run tools for you.</p>`);
+    return;
+  }
+
+  const hits = matchTools(text);
+  if (!hits.length) {
+    addBot(`<p>I couldn't find a firm tool for "<em>${esc(text)}</em>" yet.</p>
+      <button onclick="openIdeaModal('${esc(text).replace(/'/g, '&#39;')}')" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-semibold px-2.5 py-1 rounded-md text-xs inline-flex items-center gap-1"><i data-lucide="lightbulb" class="w-3 h-3"></i>Request this automation</button>`);
+    return;
+  }
+
+  const top = hits[0].t;
+  const others = hits.slice(1).map(h => h.t);
+  const [label] = ACTION_BADGE[top.actionType] || [top.actionType];
+  const canRun = top.canAITrigger === true || top.canAITrigger === 'true';
+  const headless = top.executionMode === 'Headless';
+  const cid = 'c' + Date.now();
+
+  addBot(`
+    <p>This looks like the right tool:</p>
+    <div class="border border-blue-200 bg-blue-50/40 rounded-lg p-2.5">
+      <div class="flex items-center justify-between gap-2"><div class="font-semibold">${esc(top.title)}</div><span class="text-[10px] font-bold text-indigo-700">${esc(label)}</span></div>
+      <p class="text-[12px] text-slate-600 mt-0.5">${esc(top.description)}</p>
+      <p class="text-[11px] text-slate-500 mt-1">${headless ? 'Runs in one click on the active model.' : 'Opens so you can set inputs before running.'}${top.packagesRequired ? ' Needs: ' + esc(top.packagesRequired) + '.' : ''}</p>
+    </div>
+    ${!context.hasDocument && Bridge.inRevit ? `<p class="text-[11px] text-amber-700">No project is open — open one before running.</p>` : ''}
+    <div id="${cid}" class="space-y-1.5">
+      <p class="font-semibold">${canRun ? 'Should I run it now?' : 'This tool is set to manual-run only — open it from the Tools tab.'}</p>
+      <div class="flex flex-wrap gap-1.5">
+        ${canRun
+          ? `<button onclick="confirmRun('${esc(top.toolId)}','${cid}')" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded-md text-xs inline-flex items-center gap-1"><i data-lucide="play" class="w-3 h-3"></i>Yes, run it</button>
+             <button onclick="declineRun('${cid}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs">Not now</button>`
+          : `<button onclick="showInTools('${esc(top.toolId)}')" class="bg-slate-800 text-white font-semibold px-2.5 py-1 rounded-md text-xs">Show in Tools</button>`}
+      </div>
+    </div>
+    ${others.length ? `<div class="pt-1 border-t border-slate-100"><p class="text-[11px] text-slate-400 mb-1">Also related:</p>${others.map(o =>
+      `<button onclick="sendChat('${esc(o.title).replace(/'/g, '&#39;')}')" class="block text-left text-[12px] text-blue-700 hover:underline">${esc(o.title)}</button>`).join('')}</div>` : ''}
+  `);
+}
+
+async function confirmRun(toolId, cid) {
+  const tool = tools.find(t => t.toolId === toolId);
+  document.getElementById(cid).innerHTML = `<p class="text-xs text-slate-500 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>Running <strong>${esc(tool.title)}</strong> in Revit…</p>`;
+  const res = await runTool(toolId);
+  document.getElementById(cid).innerHTML = res.ok
+    ? `<p class="text-xs text-emerald-700 flex items-center gap-1.5"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>${esc(res.message)}</p>`
+    : `<p class="text-xs text-rose-700 flex items-start gap-1.5"><i data-lucide="alert-triangle" class="w-3.5 h-3.5 shrink-0 mt-0.5"></i><span style="white-space:pre-line">${esc(res.message)}</span></p>`;
+  icons();
+  if (res.ok) addBot(`<p class="text-[12px]">Done. Anything else?</p>`);
+}
+
+function declineRun(cid) {
+  document.getElementById(cid).innerHTML = `<p class="text-xs text-slate-400 italic">Okay, not running it.</p>`;
+}
+
+function showInTools(toolId) {
+  const tool = tools.find(t => t.toolId === toolId);
+  switchTab('tools');
+  activeCategory = 'All';
+  document.getElementById('search').value = tool ? tool.title : '';
+  render();
+}
+
+async function captureViewport() {
+  try {
+    toast('Capturing active view…');
+    const res = await Bridge.call('captureViewport');
+    attachment = { name: res.viewName + '.png', dataUrl: `data:${res.mimeType};base64,${res.base64Data}`, base64: res.base64Data };
+    showAttachment();
+  } catch (e) { toast('⚠ ' + e.message, true); }
+}
+
+function attachPdf(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  attachment = { name: f.name, file: f };
+  showAttachment();
+  e.target.value = '';
+}
+
+function showAttachment() {
+  document.getElementById('attach-tray').classList.remove('hidden');
+  document.getElementById('attach-name').textContent = attachment.name;
+  const img = document.getElementById('attach-thumb');
+  img.classList.toggle('hidden', !attachment.dataUrl);
+  if (attachment.dataUrl) img.src = attachment.dataUrl;
+}
+
+function clearAttachment() {
+  attachment = null;
+  document.getElementById('attach-tray').classList.add('hidden');
+}
+
+// ======================================================================
+//  Tabs, ideas, toast
+// ======================================================================
+function switchTab(tab) {
+  document.getElementById('view-tools').classList.toggle('hidden', tab !== 'tools');
+  document.getElementById('view-ai').classList.toggle('hidden', tab !== 'ai');
+  for (const [id, on] of [['tab-tools', tab === 'tools'], ['tab-ai', tab === 'ai']]) {
+    const el = document.getElementById(id);
+    el.classList.toggle('border-blue-600', on); el.classList.toggle('text-blue-700', on);
+    el.classList.toggle('border-transparent', !on); el.classList.toggle('text-slate-500', !on);
+  }
+  if (tab === 'ai') setTimeout(() => document.getElementById('chat-input').focus(), 50);
+}
+
+function openIdeaModal(prefill) {
+  if (prefill) {
+    document.getElementById('idea-title').value = prefill;
+    document.getElementById('idea-problem').value = `I looked for a tool to "${prefill}" but couldn't find one.`;
+  }
+  document.getElementById('idea-modal').classList.remove('hidden');
+  icons();
+}
+function closeIdeaModal() { document.getElementById('idea-modal').classList.add('hidden'); }
+
+async function submitIdea(e) {
+  e.preventDefault();
+  const btn = document.getElementById('idea-submit');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await Bridge.call('submitIdea', {
+      ideaTitle: document.getElementById('idea-title').value,
+      categorySuggested: document.getElementById('idea-category').value,
+      problemStatement: document.getElementById('idea-problem').value,
+      submitterEmail: document.getElementById('idea-email').value,
+    });
+    closeIdeaModal();
+    e.target.reset();
+    toast('✓ Thanks! Your idea was sent to the BIM team.');
+  } catch (err) {
+    toast('⚠ Could not send: ' + err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit';
+  }
+}
+
+let toastTimer;
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('bg-rose-700', !!isError);
+  t.classList.toggle('bg-slate-900', !isError);
+  t.classList.remove('opacity-0');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('opacity-0'), isError ? 6000 : 3500);
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

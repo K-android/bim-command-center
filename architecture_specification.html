@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BIM Command Center & AI Copilot - Architecture & Schema Specification</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 14mm 14mm 14mm 14mm;
+    @bottom-right {
+      content: "Page " counter(page);
+      font-size: 8pt;
+      color: #64748b;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.45;
+    font-size: 9pt;
+    margin: 0;
+    padding: 0;
+    background-color: #ffffff;
+  }
+
+  .cover-header {
+    border-bottom: 2.5px solid #2563eb;
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+
+  .title-group h1 {
+    font-size: 18pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 2px 0;
+    letter-spacing: -0.5px;
+  }
+
+  .title-group .subtitle {
+    font-size: 10pt;
+    font-weight: 600;
+    color: #2563eb;
+    margin: 0;
+  }
+
+  .meta-box {
+    text-align: right;
+    font-size: 7.5pt;
+    color: #64748b;
+    line-height: 1.35;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .badge-primary { background: #dbeafe; color: #1d4ed8; }
+  .badge-success { background: #dcfce7; color: #15803d; }
+  .badge-amber   { background: #fef3c7; color: #b45309; }
+
+  h2 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    border-bottom: 1.5px solid #e2e8f0;
+    padding-bottom: 3px;
+    margin-top: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    break-after: avoid;
+  }
+
+  h2 .sec-num {
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 8pt;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+
+  h3 {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin-top: 10px;
+    margin-bottom: 4px;
+    break-after: avoid;
+  }
+
+  p {
+    margin: 0 0 6px 0;
+    text-align: justify;
+  }
+
+  .highlight-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3.5px solid #2563eb;
+    border-radius: 5px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    break-inside: avoid;
+  }
+
+  .highlight-card h4 {
+    margin: 0 0 3px 0;
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .diagram-container {
+    background: #0f172a;
+    color: #f8fafc;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 8px 0;
+    break-inside: avoid;
+  }
+
+  .flow-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 6px 0;
+    gap: 8px;
+  }
+
+  .flow-box {
+    flex: 1;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 6px 8px;
+    text-align: center;
+  }
+
+  .flow-box.highlight {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+  }
+
+  .flow-box.teal {
+    background: #064e3b;
+    border-color: #10b981;
+  }
+
+  .flow-box.amber {
+    background: #78350f;
+    border-color: #f59e0b;
+  }
+
+  .flow-box .title {
+    font-weight: 700;
+    font-size: 8pt;
+    color: #ffffff;
+    margin-bottom: 2px;
+  }
+
+  .flow-box .desc {
+    font-size: 6.8pt;
+    color: #94a3b8;
+    line-height: 1.25;
+  }
+
+  .flow-arrow {
+    font-weight: bold;
+    color: #38bdf8;
+    font-size: 10pt;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 7.6pt;
+    break-inside: avoid;
+  }
+
+  table th {
+    background: #0f172a;
+    color: #ffffff;
+    font-weight: 600;
+    text-align: left;
+    padding: 5px 6px;
+    border: 1px solid #0f172a;
+  }
+
+  table td {
+    padding: 4px 6px;
+    border: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+
+  table tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-size: 7.2pt;
+    border: 1px solid #e2e8f0;
+  }
+
+  pre {
+    margin: 0;
+    white-space: pre;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 7pt;
+    line-height: 1.35;
+  }
+
+  .code-block {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 8px 10px;
+    border-radius: 5px;
+    margin: 6px 0;
+    break-inside: avoid;
+    border: 1px solid #1e293b;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 8px 0;
+    break-inside: avoid;
+  }
+
+  .card {
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 8px 10px;
+    background: #ffffff;
+    break-inside: avoid;
+  }
+
+  .card-title {
+    font-weight: 700;
+    font-size: 8.5pt;
+    color: #0f172a;
+    margin-bottom: 3px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .card ul {
+    margin: 0;
+    padding-left: 14px;
+    font-size: 7.6pt;
+    color: #334155;
+  }
+
+  .card li {
+    margin-bottom: 2.5px;
+  }
+
+  .page-divider {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+  <!-- PAGE 1: SYSTEM OVERVIEW & STACK -->
+  <div class="cover-header">
+    <div class="title-group">
+      <h1>BIM Command Center & AI Copilot</h1>
+      <div class="subtitle">Universal Dispatcher, SharePoint Catalog Schema & Multimodal AI Architecture</div>
+    </div>
+    <div class="meta-box">
+      <strong>SYSTEM ARCHITECTURE SPECIFICATION</strong><br>
+      Autodesk Revit (2022 - 2026+)<br>
+      Status: Production Blueprint | v1.0.0
+    </div>
+  </div>
+
+  <h2><span class="sec-num">1</span> Executive Vision: "BIM App Store + Copilot"</h2>
+  <p>
+    Traditional deployment of computational design tools suffers from heavy friction: scripts are scattered across network drives, naming conventions are cryptic, Dynamo Player loads slowly, and distributing UI changes requires re-installing add-ins on every workstation. 
+  </p>
+  <div class="highlight-card">
+    <h4>Core Architectural Principle: Decoupled Thin-Client with Central Cloud Brain</h4>
+    <p style="margin:0;">
+      A <strong>single permanent Revit wrapper</strong> hosts an embedded <strong>Edge WebView2 modern web application</strong>. All tool metadata (categories, descriptions, icons, paths, prerequisites) lives centrally in <strong>SharePoint</strong>. The interface serves as a <strong>Universal Action Dispatcher</strong> capable of running Dynamo scripts, pyRevit commands, third-party add-ins, native Revit commands, and an interactive multimodal AI Copilot.
+    </p>
+  </div>
+
+  <div class="diagram-container">
+    <div style="color: #38bdf8; font-weight: bold; margin-bottom: 4px; text-align: center; font-size: 8pt;">
+      SYSTEM DATAFLOW & EXECUTION PIPELINE
+    </div>
+    <div class="flow-row">
+      <div class="flow-box teal">
+        <div class="title">1. CENTRAL REPOSITORY</div>
+        <div class="desc">SharePoint List / Excel<br>Catalog & Backlog via Graph API</div>
+      </div>
+      <div class="flow-arrow">➔</div>
+      <div class="flow-box highlight">
+        <div class="title">2. UI FRONTEND (WebView2)</div>
+        <div class="desc">"What are we solving today?"<br>Search, Category Tiles, AI Chat</div>
+      </div>
+      <div class="flow-arrow">➔</div>
+      <div class="flow-box amber">
+        <div class="title">3. REVIT API BRIDGE</div>
+        <div class="desc">IExternalEventHandler<br>Thread-safe postMessage Dispatcher</div>
+      </div>
+    </div>
+    <div style="text-align: center; margin: 3px 0; color: #94a3b8; font-size: 7pt;">
+      ▼ Universal Routing by ActionType & Parameters
+    </div>
+    <div class="flow-row">
+      <div class="flow-box">
+        <div class="title">Dynamo Engine</div>
+        <div class="desc">Headless or Player (.dyn)</div>
+      </div>
+      <div class="flow-box">
+        <div class="title">pyRevit Engine</div>
+        <div class="desc">Direct Python Runner (.py)</div>
+      </div>
+      <div class="flow-box">
+        <div class="title">Native Add-ins</div>
+        <div class="desc">Ribbon Execute / DLL Command</div>
+      </div>
+      <div class="flow-box">
+        <div class="title">Multimodal AI</div>
+        <div class="desc">Export Viewport & Read PDFs</div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="sec-num">2</span> Scalable Technology Stack Choices</h2>
+  
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">
+        <span>Frontend Layer (UI/UX)</span>
+        <span class="badge badge-primary">Edge WebView2</span>
+      </div>
+      <ul>
+        <li><strong>Tech Stack:</strong> React + Tailwind CSS + Lucide Icons (or Svelte/Vue).</li>
+        <li><strong>Hosting:</strong> Internal web server or Azure Static Web App.</li>
+        <li><strong>Zero Recompile:</strong> UI layout, search heuristics, category cards, and iconography update instantaneously across all users without restarting Revit.</li>
+        <li><strong>Rich UX:</strong> "What are we solving today?" intent bar, category tiles, instant fuzzy search (Fuse.js), and animated loading states.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>Backend & Metadata Layer</span>
+        <span class="badge badge-success">SharePoint List</span>
+      </div>
+      <ul>
+        <li><strong>Why List over Excel:</strong> Native REST API (MS Graph), zero file-lock errors, granular permissions, built-in version control, and native Grid Edit UI for BIM managers.</li>
+        <li><strong>Offline & Speed Strategy:</strong> Client caches catalog locally in <code>catalog_cache.json</code> (TTL: 30 mins) with a manual "Refresh" button.</li>
+        <li><strong>Automation Backlog:</strong> A separate SharePoint List capturing user automation requests directly from the in-app idea button.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">
+        <span>Execution Bridge (In-Session)</span>
+        <span class="badge badge-amber">IExternalEventHandler</span>
+      </div>
+      <ul>
+        <li><strong>Bridge Container:</strong> pyRevit PushButton or compiled C# Ribbon Add-in.</li>
+        <li><strong>IPC Protocol:</strong> Bi-directional communication via WebView2's <code>window.chrome.webview.postMessage()</code>.</li>
+        <li><strong>Thread Safety:</strong> Strictly routes all Revit document modifications through an asynchronous <code>IExternalEventHandler</code> queue to prevent Revit API threading violations.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>Multimodal AI Assistant</span>
+        <span class="badge badge-primary">Vision + Document AI</span>
+      </div>
+      <ul>
+        <li><strong>Active Viewport Capture:</strong> Uses native <code>Document.ExportImage()</code> to capture high-res view screenshots into memory without third-party screen grab tools.</li>
+        <li><strong>PDF Context:</strong> Drag-and-drop architectural specs or codes into chat; text and raster extracted and passed to LLM context.</li>
+        <li><strong>Function Calling:</strong> LLM can suggest and run verified tools from the catalog.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- PAGE BREAK TO START SCHEMA ON CLEAN PAGE 2 -->
+  <div class="page-divider"></div>
+
+  <!-- PAGE 2: COMPLETE DATABASE SCHEMA -->
+  <h2><span class="sec-num">3</span> Complete Database Schema Specification</h2>
+  <p>The centralized SharePoint environment requires two lists: the <strong>BIM Tool Catalog</strong> and the <strong>Automation Idea Backlog</strong>.</p>
+
+  <h3>Table 1: <code>BIM_ToolCatalog</code> (Primary Repository)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 14%;">Field Name</th>
+        <th style="width: 11%;">Type</th>
+        <th style="width: 7%;">Req</th>
+        <th style="width: 38%;">Description & Constraints</th>
+        <th style="width: 30%;">Production Example</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ToolID</code></td>
+        <td>Single Text</td>
+        <td>Yes</td>
+        <td>Unique slug identifier (kebab-case)</td>
+        <td><code>doc-renumber-doors</code></td>
+      </tr>
+      <tr>
+        <td><code>Title</code></td>
+        <td>Single Text</td>
+        <td>Yes</td>
+        <td>Human-readable display name</td>
+        <td><code>Renumber Doors by Room</code></td>
+      </tr>
+      <tr>
+        <td><code>Category</code></td>
+        <td>Choice</td>
+        <td>Yes</td>
+        <td>Enum: <code>Model Audit</code>, <code>Documentation</code>, <code>Geometry</code>, <code>QA/QC</code>, <code>Export</code>, <code>Setup</code></td>
+        <td><code>Documentation</code></td>
+      </tr>
+      <tr>
+        <td><code>Description</code></td>
+        <td>Multi Text</td>
+        <td>Yes</td>
+        <td>Plain-language summary of what the tool accomplishes and prerequisites.</td>
+        <td><code>Renumbers all door marks matching the adjacent room number and level prefix.</code></td>
+      </tr>
+      <tr>
+        <td><code>Keywords</code></td>
+        <td>Multi Text</td>
+        <td>No</td>
+        <td>Comma-separated search keywords for fuzzy & AI matching.</td>
+        <td><code>door, marks, renumber, room, schedule, audit</code></td>
+      </tr>
+      <tr>
+        <td><code>IconName</code></td>
+        <td>Single Text</td>
+        <td>Yes</td>
+        <td>Lucide icon key or SVG URL.</td>
+        <td><code>DoorClosed</code> or <code>https://cdn/.../door.svg</code></td>
+      </tr>
+      <tr>
+        <td><code>ActionType</code></td>
+        <td>Choice</td>
+        <td>Yes</td>
+        <td>Enum: <code>Dynamo</code>, <code>PyRevit</code>, <code>NativeAddin</code>, <code>PostableCommand</code>, <code>ExternalLink</code></td>
+        <td><code>Dynamo</code></td>
+      </tr>
+      <tr>
+        <td><code>TargetPath</code></td>
+        <td>Single Text</td>
+        <td>Yes</td>
+        <td>Relative path to script or Ribbon Command ID.</td>
+        <td><code>\Documentation\RenumberDoors.dyn</code></td>
+      </tr>
+      <tr>
+        <td><code>ExecutionMode</code></td>
+        <td>Choice</td>
+        <td>Yes</td>
+        <td>Enum: <code>Headless</code> (1-click silent run), <code>Player</code> (opens Dynamo Player for inputs)</td>
+        <td><code>Headless</code></td>
+      </tr>
+      <tr>
+        <td><code>RevitVersions</code></td>
+        <td>Multi Choice</td>
+        <td>Yes</td>
+        <td>Multi-select: <code>2022</code>, <code>2023</code>, <code>2024</code>, <code>2025</code>, <code>2026</code></td>
+        <td><code>2024; 2025; 2026</code></td>
+      </tr>
+      <tr>
+        <td><code>PackagesRequired</code></td>
+        <td>Single Text</td>
+        <td>No</td>
+        <td>Dynamo packages required for validation.</td>
+        <td><code>Clockwork (2.4.0), Rhythm (2024.1)</code></td>
+      </tr>
+      <tr>
+        <td><code>Status</code></td>
+        <td>Choice</td>
+        <td>Yes</td>
+        <td>Enum: <code>Active</code>, <code>Beta</code>, <code>UnderReview</code>, <code>Deprecated</code></td>
+        <td><code>Active</code></td>
+      </tr>
+      <tr>
+        <td><code>CanAITrigger</code></td>
+        <td>Boolean</td>
+        <td>Yes</td>
+        <td>Whether the AI Chatbot is permitted to invoke this tool autonomously.</td>
+        <td><code>True</code></td>
+      </tr>
+      <tr>
+        <td><code>Version</code></td>
+        <td>Single Text</td>
+        <td>Yes</td>
+        <td>Semantic version string.</td>
+        <td><code>v2.1.0</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Table 2: <code>BIM_IdeaBacklog</code> (Crowdsourced Automation Pipeline)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 17%;">Field Name</th>
+        <th style="width: 11%;">Type</th>
+        <th style="width: 42%;">Description</th>
+        <th style="width: 30%;">Production Example</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>IdeaTitle</code></td>
+        <td>Single Text</td>
+        <td>Short summary of the requested automation.</td>
+        <td><code>Batch Align Sheet Viewports</code></td>
+      </tr>
+      <tr>
+        <td><code>ProblemStatement</code></td>
+        <td>Multi Text</td>
+        <td>Pain point, hours spent manually, and target outcome.</td>
+        <td><code>Aligning plans across 40 sheets takes 3 hours per submission.</code></td>
+      </tr>
+      <tr>
+        <td><code>CategorySuggested</code></td>
+        <td>Choice</td>
+        <td>Target category from catalog enum.</td>
+        <td><code>Documentation</code></td>
+      </tr>
+      <tr>
+        <td><code>SubmitterEmail</code></td>
+        <td>Single Text</td>
+        <td>Authenticated user email (auto-populated via SSO).</td>
+        <td><code>user@company.com</code></td>
+      </tr>
+      <tr>
+        <td><code>RevitVersionUsed</code></td>
+        <td>Single Text</td>
+        <td>Current Revit build of the user session.</td>
+        <td><code>Revit 2025.2</code></td>
+      </tr>
+      <tr>
+        <td><code>AttachedScreenshot</code></td>
+        <td>Attachments</td>
+        <td>Optional viewport capture or markup uploaded with idea.</td>
+        <td><code>viewport_markup.png</code></td>
+      </tr>
+      <tr>
+        <td><code>Status</code></td>
+        <td>Choice</td>
+        <td>Enum: <code>New</code>, <code>Evaluating</code>, <code>In Development</code>, <code>Completed</code>, <code>Rejected</code></td>
+        <td><code>Evaluating</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- PAGE BREAK FOR IMPLEMENTATION & DEPLOYMENT ON PAGE 3 -->
+  <div class="page-divider"></div>
+
+  <!-- PAGE 3: PROTOCOL, CODE & DEPLOYMENT -->
+  <h2><span class="sec-num">4</span> Bridge IPC Protocol & Multimodal Dispatcher</h2>
+  <p>The communication between the Edge WebView2 frontend and Revit's C#/pyRevit bridge uses structured JSON messages over <code>postMessage</code>:</p>
+
+  <div class="code-block">
+<pre><code>// 1. Tool Execution Payload (Frontend -> Revit Bridge)
+{
+  "action": "EXECUTE_TOOL",
+  "toolId": "doc-renumber-doors",
+  "actionType": "Dynamo",
+  "targetPath": "C:\\BIM_Tools\\Documentation\\RenumberDoors.dyn",
+  "executionMode": "Headless",
+  "parameters": { "prefix": "D-", "level": "Level 1" }
+}
+
+// 2. Viewport Screen Capture Request (AI Chatbot -> Revit Bridge)
+{
+  "action": "CAPTURE_ACTIVE_VIEWPORT",
+  "dpi": 150,
+  "cropToVisibleRegion": true
+}
+
+// 3. Viewport Capture Response (Revit Bridge -> Frontend)
+{
+  "action": "VIEWPORT_CAPTURED",
+  "mimeType": "image/png",
+  "base64Data": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "activeViewName": "Level 2 - Architectural Plan"
+}</code></pre>
+  </div>
+
+  <h2><span class="sec-num">5</span> Universal Dispatcher Implementation Reference</h2>
+
+  <div class="grid-2">
+    <div>
+      <h3>A. Triggering Native Add-in Buttons</h3>
+      <p style="font-size:7.5pt;">Simulate a click on any installed Revit plugin button via Ribbon API:</p>
+      <div class="code-block">
+<pre><code>using Autodesk.Windows;
+
+public void ExecuteRibbonButton(string buttonId) {
+    var ribbon = ComponentManager.Ribbon;
+    var item = ribbon.FindItem(buttonId, true) 
+               as RibbonButton;
+    if (item != null && item.IsEnabled) {
+        item.Execute();
+    }
+}</code></pre>
+      </div>
+    </div>
+
+    <div>
+      <h3>B. Capturing Active Viewport for AI</h3>
+      <p style="font-size:7.5pt;">Native Revit API capture without external screen grabbing utilities:</p>
+      <div class="code-block">
+<pre><code>ImageExportOptions opts = new ImageExportOptions {
+    ExportRange = ExportRange.VisibleRegionOfCurrentView,
+    FilePath = tempPngPath,
+    ImageResolution = ImageResolution.DPI_150,
+    PixelSize = 1920
+};
+doc.ExportImage(opts);
+byte[] bytes = File.ReadAllBytes(tempPngPath);
+string base64 = Convert.ToBase64String(bytes);</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="sec-num">6</span> Scalable Deployment & Rollout Strategy</h2>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Option A: pyRevit Extension Sync (Fastest)</div>
+      <p style="font-size: 7.5pt; margin-bottom: 3px;">
+        Deploy a custom pyRevit extension pointing to a central read-only network folder:
+      </p>
+      <code>pyrevit extend ui CompanyTools \\server\BIM\pyRevit-Tools</code>
+      <p style="font-size: 7.5pt; margin-top: 4px;">
+        <strong>Pros:</strong> Immediate setup, zero MSI packaging, updates deploy to network folder and propagate instantly.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Option B: Lightweight C# .NET Add-in (Enterprise)</div>
+      <p style="font-size: 7.5pt; margin-bottom: 3px;">
+        A single compiled DLL installed via Intune/SCCM once per workstation.
+      </p>
+      <code>C:\ProgramData\Autodesk\Revit\Addins\[Year]\BIMCommandCenter.addin</code>
+      <p style="font-size: 7.5pt; margin-top: 4px;">
+        <strong>Pros:</strong> 100% independent of pyRevit runtime, native enterprise management, highest execution speed.
+      </p>
+    </div>
+  </div>
+
+  <div class="highlight-card" style="margin-top: 10px;">
+    <h4>Summary of Strategic Advantages</h4>
+    <p style="margin:0; font-size: 8pt;">
+      1. <strong>Central Governance:</strong> BIM managers modify scripts, update categories, and publish new tools in SharePoint without interrupting production staff.<br>
+      2. <strong>Zero Friction Tool Discovery:</strong> Users search by intent ("What are we solving today?") rather than guessing file paths.<br>
+      3. <strong>Future-Proof Multimodal Intelligence:</strong> The architecture supports immediate expansion into multimodal AI reasoning (viewport screenshots + PDF specifications) with zero structural rework.
+    </p>
+  </div>
+
+</body>
+</html>
