@@ -49,6 +49,14 @@ Source: "..\build\2024\*"; DestDir: "{app}\Revit2024"; Flags: ignoreversion recu
 ; --- Revit 2023 Binaries ---
 Source: "..\build\2023\*"; DestDir: "{app}\Revit2023"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: revit2023
 
+; --- Central Scripts Folders (Dynamo, PyRevit, Custom Addins) ---
+Source: "..\scripts_template\*"; DestDir: "{userappdata}\BIMCommandCenter\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs onlyifdoesntexist
+
+[Dirs]
+Name: "{userappdata}\BIMCommandCenter\scripts\Dynamo"
+Name: "{userappdata}\BIMCommandCenter\scripts\PyRevit"
+Name: "{userappdata}\BIMCommandCenter\scripts\Custom Addins"
+
 [Code]
 // Helper function to write Revit .addin manifest file
 procedure CreateAddinManifest(Year: String; ComponentName: String);
@@ -58,7 +66,7 @@ var
   AssemblyPath: String;
   ManifestContent: String;
 begin
-  if IsComponentSelected(ComponentName) then
+  if WizardIsComponentSelected(ComponentName) then
   begin
     AddinDir := ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + Year);
     ForceDirectories(AddinDir);
