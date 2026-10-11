@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -60,8 +61,19 @@ namespace BIMCommandCenter.Core.Catalog
 
             try
             {
-                List<Dictionary<string, object>> raw = await LoadRawAsync(_config.CatalogSource).ConfigureAwait(false);
+                List<Dictionary<string, object>> raw = new List<Dictionary<string, object>>();
+                try
+                {
+                    raw = await LoadRawAsync(_config.CatalogSource).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Catalog source load failed: " + ex.Message);
+                }
+
                 List<Dictionary<string, object>> tools = raw.Select(Normalize).Where(IsUsable).ToList();
+                ScanScriptsRoot(tools);
+
                 try { File.WriteAllText(CachePath, Json.Stringify(tools)); } catch { }
 
                 _last = new CatalogResult { Tools = Filter(tools), Source = _config.CatalogSource, LoadedAt = DateTime.Now };
@@ -72,6 +84,60 @@ namespace BIMCommandCenter.Core.Catalog
                 _last = LoadFromCache("Could not reach catalog source (" + ex.Message + "). Showing last cached copy.");
             }
             return _last;
+        }
+
+        private void ScanScriptsRoot(List<Dictionary<string, object>> tools)
+        {
+            if (string.IsNullOrWhiteSpace(_config.ScriptsRoot)) return;
+            string root = Environment.ExpandEnvironmentVariables(_config.ScriptsRoot);
+            if (!Directory.Exists(root)) return;
+
+            try
+            {
+                var existing = new HashSet<string>(tools.Select(t => t.Str("targetPath")).Where(p => !string.IsNullOrEmpty(p)), StringComparer.OrdinalIgnoreCase);
+
+                string[] dynFiles = Directory.GetFiles(root, "*.dyn", SearchOption.AllDirectories);
+                string[] pyFiles = Directory.GetFiles(root, "*.py", SearchOption.AllDirectories);
+
+                foreach (string file in dynFiles.Concat(pyFiles))
+                {
+                    string fileName = Path.GetFileName(file);
+                    string baseName = Path.GetFileNameWithoutExtension(file);
+                    string ext = Path.GetExtension(file).ToLowerInvariant();
+                    string dir = Path.GetDirectoryName(file);
+                    string relDir = dir.Length > root.Length ? dir.Substring(root.Length).TrimStart('\\', '/') : "";
+                    string category = string.IsNullOrWhiteSpace(relDir) ? "Central Scripts" : relDir.Replace("\\", " / ");
+
+                    if (existing.Contains(file) || existing.Contains(fileName)) continue;
+
+                    string friendlyTitle = Regex.Replace(baseName, "[_-]+", " ").Trim();
+                    try { friendlyTitle = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(friendlyTitle); } catch {}
+
+                    var autoTool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["toolId"] = "local-" + Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "-"),
+                        ["title"] = friendlyTitle,
+                        ["category"] = category,
+                        ["description"] = "Script located in your central folder: " + (string.IsNullOrEmpty(relDir) ? fileName : Path.Combine(relDir, fileName)),
+                        ["keywords"] = new List<string> { baseName.ToLowerInvariant(), friendlyTitle.ToLowerInvariant(), category.ToLowerInvariant() },
+                        ["actionType"] = ext == ".dyn" ? "Dynamo" : "PyRevit",
+                        ["targetPath"] = file,
+                        ["executionMode"] = "Player",
+                        ["status"] = "Active",
+                        ["canAITrigger"] = true,
+                        ["version"] = "v1.0 (Local)",
+                        ["iconName"] = ext == ".dyn" ? "PlayCircle" : "Code",
+                        ["revitVersions"] = new List<string>()
+                    };
+
+                    tools.Insert(0, autoTool); // Put user's central scripts at the top!
+                    existing.Add(file);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("ScanScriptsRoot error: " + ex.Message);
+            }
         }
 
         private CatalogResult LoadFromCache(string warning)

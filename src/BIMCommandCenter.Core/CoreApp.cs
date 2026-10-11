@@ -36,7 +36,8 @@ namespace BIMCommandCenter.Core
                 Dispatcher = dispatcher,
                 Catalog = new CatalogService(config, year),
                 Runner = new ToolRunner(config),
-                Ideas = new IdeaService(config)
+                Ideas = new IdeaService(config),
+                RevitYear = year
             };
 
             application.RegisterDockablePane(PaneId, "BIM Command Center", new CommandCenterPane(Services));

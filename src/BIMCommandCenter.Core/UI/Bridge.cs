@@ -106,6 +106,57 @@ namespace BIMCommandCenter.Core.UI
                     return true;
                 }
 
+                case "openFolder":
+                {
+                    string path = payload.Str("path");
+                    if (string.IsNullOrWhiteSpace(path))
+                        path = _s.Config.ScriptsRoot;
+                    if (string.IsNullOrWhiteSpace(path))
+                        path = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BIM_Scripts");
+
+                    path = Environment.ExpandEnvironmentVariables(path);
+                    System.IO.Directory.CreateDirectory(path);
+                    Process.Start(new ProcessStartInfo("explorer.exe", "\"" + path + "\"") { UseShellExecute = true });
+                    return new Dictionary<string, object> { ["path"] = path };
+                }
+
+                case "getConfig":
+                {
+                    return new Dictionary<string, object>
+                    {
+                        ["catalogSource"] = _s.Config.CatalogSource,
+                        ["catalogSheet"] = _s.Config.CatalogSheet,
+                        ["scriptsRoot"] = _s.Config.ScriptsRoot,
+                        ["ideasEndpoint"] = _s.Config.IdeasEndpoint,
+                        ["ideasFolder"] = _s.Config.IdeasFolder,
+                        ["configPath"] = _s.Config.LoadedFrom
+                    };
+                }
+
+                case "saveConfig":
+                {
+                    string userConfigPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BIMCommandCenter", "config.json");
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(userConfigPath));
+
+                    var current = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                    if (System.IO.File.Exists(userConfigPath))
+                    {
+                        try { current = Json.AsObject(Json.Parse(System.IO.File.ReadAllText(userConfigPath))) ?? current; } catch {}
+                    }
+
+                    foreach (var kv in payload)
+                    {
+                        current[kv.Key] = kv.Value;
+                    }
+
+                    System.IO.File.WriteAllText(userConfigPath, Json.Stringify(current));
+                    _s.Config = AppConfig.Load();
+                    _s.Catalog = new CatalogService(_s.Config, _s.RevitYear ?? "2026");
+                    _s.Runner = new ToolRunner(_s.Config);
+
+                    return new Dictionary<string, object> { ["saved"] = true, ["configPath"] = userConfigPath };
+                }
+
                 default:
                     throw new NotSupportedException("Unknown action: " + action);
             }
@@ -129,5 +180,6 @@ namespace BIMCommandCenter.Core.UI
         public CatalogService Catalog { get; set; }
         public ToolRunner Runner { get; set; }
         public IdeaService Ideas { get; set; }
+        public string RevitYear { get; set; }
     }
 }
