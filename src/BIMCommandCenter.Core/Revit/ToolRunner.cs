@@ -43,8 +43,9 @@ namespace BIMCommandCenter.Core.Revit
                 case "Dynamo":
                     return RunDynamo(app, tool, ResolvePath(target));
                 case "PyRevit":
-                case "NativeAddin":
                     return RunRibbonCommand(app, target, title);
+                case "NativeAddin":
+                    return RunNativeAddin(app, target, title, tool);
                 case "PostableCommand":
                     return RunPostable(app, target, title);
                 case "Url":
@@ -128,6 +129,82 @@ namespace BIMCommandCenter.Core.Revit
                 return RunResult.Fail("Revit can't run \"" + title + "\" right now.");
             app.PostCommand(id);
             return RunResult.Success("Started " + title);
+        }
+
+        private RunResult RunNativeAddin(UIApplication app, string target, string title, Dictionary<string, object> tool)
+        {
+            string resolved = ResolvePath(target);
+
+            // 1. If target is or points to a .dll file:
+            if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved))
+            {
+                return RunAssemblyCommand(app, resolved, title);
+            }
+
+            // 2. Try looking up Ribbon Command directly
+            RevitCommandId id = RevitCommandId.LookupCommandId(target);
+            if (id != null && app.CanPostCommand(id))
+            {
+                app.PostCommand(id);
+                return RunResult.Success("Started " + title);
+            }
+
+            // 3. Try alternative ribbon ID variations
+            string[] variations = new[]
+            {
+                "CustomCtrl_%CustomCtrl_%" + target.TrimStart('%'),
+                "CustomCtrl_%CustomCtrl_%BIM Health%Analysis%cmdHealthCheck",
+                "CustomCtrl_%CustomCtrl_%" + target.Replace("/", "%").Replace("\\", "%")
+            };
+            foreach (var v in variations)
+            {
+                id = RevitCommandId.LookupCommandId(v);
+                if (id != null && app.CanPostCommand(id))
+                {
+                    app.PostCommand(id);
+                    return RunResult.Success("Started " + title);
+                }
+            }
+
+            // 4. Fallback: if target or title is Health Check, check if BIMHealthCheck.dll is installed in Revit AddIns
+            if (target.IndexOf("Health", StringComparison.OrdinalIgnoreCase) >= 0 || title.IndexOf("Health", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                string year = app.Application.VersionNumber;
+                string candidate = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Autodesk", "Revit", "Addins", year, "BIMHealthCheck", "BIMHealthCheck.dll");
+                if (File.Exists(candidate))
+                {
+                    return RunAssemblyCommand(app, candidate, title);
+                }
+            }
+
+            return RunResult.Fail("Ribbon command not found: " + target + "\nMake sure the add-in is installed in Revit.");
+        }
+
+        private static RunResult RunAssemblyCommand(UIApplication app, string dllPath, string title)
+        {
+            try
+            {
+                Assembly asm = Assembly.LoadFrom(dllPath);
+
+                // Check if it's BIMHealthCheck engine
+                Type engineType = asm.GetType("BIMHealthCheck.Engine.HealthCheckEngine");
+                if (engineType != null)
+                {
+                    object engine = Activator.CreateInstance(engineType);
+                    MethodInfo runMethod = engineType.GetMethod("RunAllChecks");
+                    object score = runMethod.Invoke(engine, new object[] { app.ActiveUIDocument.Document });
+                    Type dialogType = asm.GetType("BIMHealthCheck.UI.HealthCheckDialog");
+                    var dialog = (System.Windows.Window)Activator.CreateInstance(dialogType, new object[] { score });
+                    dialog.ShowDialog();
+                    return RunResult.Success("Successfully completed " + title);
+                }
+
+                return RunResult.Fail("Could not locate executable entry point in " + Path.GetFileName(dllPath));
+            }
+            catch (Exception ex)
+            {
+                return RunResult.Fail("Error executing " + title + ": " + (ex.InnerException?.Message ?? ex.Message));
+            }
         }
     }
 

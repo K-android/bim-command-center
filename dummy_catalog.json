@@ -1,5 +1,22 @@
 [
   {
+    "toolId": "bim-health-check",
+    "title": "BIM Health Check",
+    "category": "Quality & QA",
+    "description": "Comprehensive model audit & health check scoring parameters, warnings, views, and links.",
+    "keywords": ["health", "check", "audit", "model", "warnings", "score", "qa", "quality"],
+    "iconName": "Activity",
+    "actionType": "NativeAddin",
+    "targetPath": "CustomCtrl_%CustomCtrl_%BIM Health%Analysis%cmdHealthCheck",
+    "executionMode": "Native",
+    "revitVersions": ["2023", "2024", "2025", "2026"],
+    "packagesRequired": "",
+    "status": "Active",
+    "canAITrigger": true,
+    "version": "v1.0.0",
+    "author": "K-android"
+  },
+  {
     "toolId": "doc-renumber-doors",
     "title": "Renumber Doors by Room",
     "category": "Documentation",

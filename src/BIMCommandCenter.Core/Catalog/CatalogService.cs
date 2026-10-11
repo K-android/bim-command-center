@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BIMCommandCenter.Core.Infrastructure;
@@ -98,17 +99,42 @@ namespace BIMCommandCenter.Core.Catalog
 
                 string[] dynFiles = Directory.GetFiles(root, "*.dyn", SearchOption.AllDirectories);
                 string[] pyFiles = Directory.GetFiles(root, "*.py", SearchOption.AllDirectories);
+                string[] lnkFiles = Directory.GetFiles(root, "*.lnk", SearchOption.AllDirectories);
+                string[] dllFiles = Directory.GetFiles(root, "*.dll", SearchOption.AllDirectories);
 
-                foreach (string file in dynFiles.Concat(pyFiles))
+                foreach (string file in dynFiles.Concat(pyFiles).Concat(lnkFiles).Concat(dllFiles))
                 {
                     string fileName = Path.GetFileName(file);
                     string baseName = Path.GetFileNameWithoutExtension(file);
                     string ext = Path.GetExtension(file).ToLowerInvariant();
+
+                    if (ext == ".dll" && (fileName.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase) || 
+                                          fileName.StartsWith("System", StringComparison.OrdinalIgnoreCase) || 
+                                          fileName.StartsWith("Revit", StringComparison.OrdinalIgnoreCase) || 
+                                          fileName.StartsWith("BIMCommandCenter", StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
                     string dir = Path.GetDirectoryName(file);
                     string relDir = dir.Length > root.Length ? dir.Substring(root.Length).TrimStart('\\', '/') : "";
-                    string category = string.IsNullOrWhiteSpace(relDir) ? "Central Scripts" : relDir.Replace("\\", " / ");
+                    string category = string.IsNullOrWhiteSpace(relDir) ? "Central Library" : relDir.Replace("\\", " / ");
 
                     if (existing.Contains(file) || existing.Contains(fileName)) continue;
+
+                    string targetPath = file;
+                    string actionType = ext == ".dyn" ? "Dynamo" : (ext == ".py" ? "PyRevit" : "NativeAddin");
+                    string iconName = ext == ".dyn" ? "PlayCircle" : (ext == ".py" ? "Code" : "Activity");
+
+                    if (ext == ".lnk")
+                    {
+                        string resolved = ResolveShortcutTarget(file);
+                        if (!string.IsNullOrEmpty(resolved))
+                        {
+                            targetPath = resolved;
+                            string rExt = Path.GetExtension(resolved).ToLowerInvariant();
+                            actionType = rExt == ".dyn" ? "Dynamo" : (rExt == ".py" ? "PyRevit" : "NativeAddin");
+                            iconName = rExt == ".dyn" ? "PlayCircle" : (rExt == ".py" ? "Code" : "Activity");
+                        }
+                    }
 
                     string friendlyTitle = Regex.Replace(baseName, "[_-]+", " ").Trim();
                     try { friendlyTitle = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(friendlyTitle); } catch {}
@@ -118,19 +144,19 @@ namespace BIMCommandCenter.Core.Catalog
                         ["toolId"] = "local-" + Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "-"),
                         ["title"] = friendlyTitle,
                         ["category"] = category,
-                        ["description"] = "Script located in your central folder: " + (string.IsNullOrEmpty(relDir) ? fileName : Path.Combine(relDir, fileName)),
+                        ["description"] = "Tool or shortcut located in your central folder: " + (string.IsNullOrEmpty(relDir) ? fileName : Path.Combine(relDir, fileName)),
                         ["keywords"] = new List<string> { baseName.ToLowerInvariant(), friendlyTitle.ToLowerInvariant(), category.ToLowerInvariant() },
-                        ["actionType"] = ext == ".dyn" ? "Dynamo" : "PyRevit",
-                        ["targetPath"] = file,
+                        ["actionType"] = actionType,
+                        ["targetPath"] = targetPath,
                         ["executionMode"] = "Player",
                         ["status"] = "Active",
                         ["canAITrigger"] = true,
                         ["version"] = "v1.0 (Local)",
-                        ["iconName"] = ext == ".dyn" ? "PlayCircle" : "Code",
+                        ["iconName"] = iconName,
                         ["revitVersions"] = new List<string>()
                     };
 
-                    tools.Insert(0, autoTool); // Put user's central scripts at the top!
+                    tools.Insert(0, autoTool); // Put user's central tools at the top!
                     existing.Add(file);
                 }
             }
@@ -138,6 +164,34 @@ namespace BIMCommandCenter.Core.Catalog
             {
                 Log.Write("ScanScriptsRoot error: " + ex.Message);
             }
+        }
+
+        private static string ResolveShortcutTarget(string shortcutPath)
+        {
+            try
+            {
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType != null)
+                {
+                    object shell = Activator.CreateInstance(shellType);
+                    MethodInfo createShortcut = shellType.GetMethod("CreateShortcut");
+                    if (createShortcut != null)
+                    {
+                        object shortcut = createShortcut.Invoke(shell, new object[] { shortcutPath });
+                        if (shortcut != null)
+                        {
+                            PropertyInfo targetProp = shortcut.GetType().GetProperty("TargetPath");
+                            if (targetProp != null)
+                            {
+                                string target = targetProp.GetValue(shortcut, null) as string;
+                                if (!string.IsNullOrEmpty(target)) return target;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
         }
 
         private CatalogResult LoadFromCache(string warning)
