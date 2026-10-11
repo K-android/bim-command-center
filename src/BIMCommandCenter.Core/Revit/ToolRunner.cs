@@ -58,9 +58,22 @@ namespace BIMCommandCenter.Core.Revit
 
         private string ResolvePath(string target)
         {
-            target = Environment.ExpandEnvironmentVariables(target ?? "");
-            if (Path.IsPathRooted(target) || string.IsNullOrWhiteSpace(_config.ScriptsRoot)) return target;
-            return Path.Combine(_config.ScriptsRoot, target.TrimStart('\\', '/'));
+            if (string.IsNullOrWhiteSpace(target)) return target;
+            target = Environment.ExpandEnvironmentVariables(target.Trim());
+            if (Path.IsPathRooted(target) && File.Exists(target)) return target;
+
+            // 1. Check central scripts root if set
+            if (!string.IsNullOrWhiteSpace(_config.ScriptsRoot))
+            {
+                string inScripts = Path.Combine(_config.ScriptsRoot, target.TrimStart('\\', '/'));
+                if (File.Exists(inScripts)) return inScripts;
+            }
+
+            // 2. Check bundled core folder
+            string inCore = Path.Combine(AppConfig.CoreDir, target.TrimStart('\\', '/'));
+            if (File.Exists(inCore)) return inCore;
+
+            return Path.IsPathRooted(target) ? target : inCore;
         }
 
         // ---------------- Dynamo ----------------
@@ -166,7 +179,9 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            // 4. Fallback: if target or title is Health Check, check if BIMHealthCheck.dll is installed in Revit AddIns
+            // 4. Fallback: if target or title is Health Check, check:
+            //    A) Local user AppData add-in (picks up newer manual builds)
+            //    B) Bundled tools/BIMHealthCheck.dll shipped with BIM Command Center
             if (target.IndexOf("Health", StringComparison.OrdinalIgnoreCase) >= 0 || title.IndexOf("Health", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 string year = app.Application.VersionNumber;
@@ -175,9 +190,15 @@ namespace BIMCommandCenter.Core.Revit
                 {
                     return RunAssemblyCommand(app, candidate, title);
                 }
+
+                string bundled = Path.Combine(AppConfig.CoreDir, "tools", "BIMHealthCheck.dll");
+                if (File.Exists(bundled))
+                {
+                    return RunAssemblyCommand(app, bundled, title);
+                }
             }
 
-            return RunResult.Fail("Ribbon command not found: " + target + "\nMake sure the add-in is installed in Revit.");
+            return RunResult.Fail("Command or add-in not found: " + target + "\nMake sure the add-in is installed or located in your tools folder.");
         }
 
         private static RunResult RunAssemblyCommand(UIApplication app, string dllPath, string title)

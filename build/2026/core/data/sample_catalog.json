@@ -7,7 +7,7 @@
     "keywords": ["health", "check", "audit", "model", "warnings", "score", "qa", "quality"],
     "iconName": "Activity",
     "actionType": "NativeAddin",
-    "targetPath": "CustomCtrl_%CustomCtrl_%BIM Health%Analysis%cmdHealthCheck",
+    "targetPath": "tools/BIMHealthCheck.dll",
     "executionMode": "Native",
     "revitVersions": ["2023", "2024", "2025", "2026"],
     "packagesRequired": "",

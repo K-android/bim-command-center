@@ -25,6 +25,7 @@
     <None Include="..\..\frontend\**\*" LinkBase="frontend" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\config\config.json" Link="config.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\dummy_catalog.json" Link="data\sample_catalog.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\tools\$(RevitVersion)\**\*" LinkBase="tools" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="WriteVersionFile" AfterTargets="Build">
