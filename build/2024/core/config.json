@@ -1,11 +1,23 @@
 {
+  "_comment": "=== BIM COMMAND CENTER CONFIGURATION ===",
+  
   "catalogSource": "data/sample_catalog.json",
-  "catalogSheet": "",
+  "_catalogSource_placeholder": "REPLACE WITH YOUR SHAREPOINT EXCEL FILE PATH OR URL (e.g., C:\\Users\\%USERNAME%\\CompanySharePoint\\BIM_ToolCatalog.xlsx OR https://prod-xx.westus.logic.azure.com/...)",
+
+  "catalogSheet": "Tools",
+  "_catalogSheet_comment": "Name of the Excel sheet if using .xlsx (leave blank if first sheet)",
+
   "scriptsRoot": "",
+  "_scriptsRoot_placeholder": "REPLACE WITH YOUR SYNCED DYNAMO SCRIPTS FOLDER (e.g., C:\\Users\\%USERNAME%\\CompanySharePoint\\Scripts OR \\\\company-server\\BIM\\Scripts)",
+
   "ideasEndpoint": "",
+  "_ideasEndpoint_placeholder": "OPTIONAL: Power Automate HTTP URL to send 'Request Automation' ideas directly to SharePoint List",
+
   "ideasFolder": "",
-  "frontendUrl": "",
-  "aiEndpoint": "",
+  "_ideasFolder_placeholder": "OPTIONAL: Shared network folder to drop idea .json files if no webhook is used",
+
   "updateSource": "",
+  "_updateSource_placeholder": "OPTIONAL: Network path (e.g., \\\\company-server\\BIMTools\\Updates) for automatic zero-reinstall updates",
+
   "cacheMinutes": 30
 }
