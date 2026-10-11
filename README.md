@@ -13,15 +13,24 @@ Enterprise-grade, scalable universal tool dispatcher and computational catalog f
 
 1. **"What are we solving today?" Intent Search:**
    - Instant search across firm automations (Dynamo graphs, pyRevit scripts, native add-ins, Revit postable commands).
-2. **Interactive BIM Copilot:**
-   - Detects user intent conversationally, highlights prerequisites, and asks: *"Should I execute this script for you?"* with 1-click execution.
-   - Captures active Revit viewports (`Document.ExportImage`) and ingests PDF specifications for multimodal context.
-3. **Decoupled 4-Tier Architecture:**
+2. **Multi-Engine BIM AI Copilot (⚙️ Settings UI):**
+   - **Google Gemini**: Multimodal viewport inspection (`Document.ExportImage`), PDF ingestion, and reasoning.
+   - **Groq**: Ultra-fast responses powered by `llama-3.3-70b-versatile`.
+   - **Local AI / Ollama**: Air-gapped, zero-cost local LLM inference via `http://localhost:11434/v1`.
+   - **Interactive Execution**: Copilot recommends tools conversationally with 1-click `[▶ Yes, execute now]` buttons.
+3. **Unified Central Scripts Library (`%AppData%\BIMCommandCenter\scripts`):**
+   - Auto-discovers and categorizes `.dyn`, `.py`, `.dll`, and Windows `.lnk` shortcuts dynamically.
+   - Pre-organized subfolders for `Dynamo\`, `PyRevit\`, and `Custom Addins\`.
+   - "Open Folder in Explorer" button right from the in-Revit Settings modal.
+4. **Pre-Integrated Native Add-ins & Zero-Install Deployment:**
+   - Bundles **BIM Health Check** across Revit 2023–2026.
+   - 3-tier lookup hierarchy (Central Shared Folder $\rightarrow$ Local User Addins $\rightarrow$ Bundled fallback) enables deploying new firm add-ins with zero user reinstallation.
+5. **Decoupled 4-Tier Architecture:**
    - Thin Native Loader (`%LocalAppData%`) + Staged Core Runner + Embedded WebView2 Frontend + Central SharePoint Brain.
    - **Zero file-locking on network shares:** Releases update without requiring users to close Revit.
-4. **Zero-Privilege Single-File Installer:**
+6. **Zero-Privilege Single-File Installer:**
    - `dist/BIMCommandCenter_Setup_v1.0.0.exe` (2.7 MB) installs for any user without IT administrator rights.
-5. **Cross-Platform Extensibility:**
+7. **Cross-Platform Extensibility:**
    - Architected to share the exact same UI and SharePoint catalog with McNeel Rhino 7 & 8 (Grasshopper).
 
 ---
@@ -43,8 +52,17 @@ Enterprise-grade, scalable universal tool dispatcher and computational catalog f
 │       ├── Revit/                            # RevitDispatcher, ToolRunner, RevitContext
 │       └── UI/                               # CommandCenterPane (WebView2) & Bridge
 ├── frontend/                                 # Embedded Web UI (Tier 3)
-│   ├── index.html                            # Standalone & WebView2 application
+│   ├── index.html                            # Standalone & WebView2 application with Settings UI
 │   └── vendor/                               # Offline assets (tailwind.js, lucide.min.js)
+├── tools/                                    # Pre-bundled native add-ins
+│   ├── 2023/                                 # BIMHealthCheck.dll (.NET Framework 4.8)
+│   ├── 2024/                                 # BIMHealthCheck.dll (.NET Framework 4.8)
+│   ├── 2025/                                 # BIMHealthCheck.dll (.NET 8.0-windows)
+│   └── 2026/                                 # BIMHealthCheck.dll (.NET 8.0-windows)
+├── scripts_template/                         # Initial central library structure
+│   ├── Dynamo/                               # Directory for .dyn graphs
+│   ├── PyRevit/                              # Directory for .py scripts
+│   └── Custom Addins/                        # Directory for .dll / .lnk shortcuts
 ├── installer/
 │   └── BIMCommandCenterSetup.iss             # Inno Setup 6 compilation script
 ├── dist/                                     # Production distribution artifacts
@@ -58,10 +76,27 @@ Enterprise-grade, scalable universal tool dispatcher and computational catalog f
 ├── dummy_catalog.json                        # Blueprint catalog dataset for SharePoint
 ├── dummy_ideas.json                          # Blueprint backlog dataset for SharePoint
 ├── BIM_Command_Center_Architecture_Specification.pdf
-└── README_INSTALLER.md                       # Deployment guide for users & IT
+├── README_INSTALLER.md                       # Deployment guide for users & IT
+└── SETTINGS_GUIDE.md                         # Guide for AI Keys, Central Folders & SharePoint
 ```
 
 ---
+
+## ⚙️ AI Engine & Central Scripts Configuration
+
+Click the **⚙️ Settings** icon in the top right of the BIM Command Center panel in Revit:
+
+### 1. Select Your AI Engine
+- **Google Gemini**: Enter your free API key from [Google AI Studio](https://aistudio.google.com/app/apikey). Supports multimodal analysis of active Revit viewports.
+- **Groq**: Enter your key from [Groq Console](https://console.groq.com/keys) for ultra-low latency LLaMA inference.
+- **Local AI (Ollama)**: Connects to `http://localhost:11434/v1` for 100% offline, air-gapped model execution.
+- Click **"Test Connection"** to verify API validity before saving.
+
+### 2. Manage Your Central Library
+- Click **"Open Folder in Explorer"** to immediately open `%AppData%\BIMCommandCenter\scripts`.
+- Drop any `.dyn`, `.py`, `.dll`, or Windows shortcut (`.lnk`) into the `Dynamo\`, `PyRevit\`, or `Custom Addins\` folders.
+- Hit the **Refresh (↻)** button in BIM Command Center, and your scripts appear instantly in the library!
+
 
 ## 🚀 Quick Start & Installation
 
