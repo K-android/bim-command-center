@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BIMCommandCenter.Core.Infrastructure;
@@ -139,42 +141,284 @@ namespace BIMCommandCenter.Core.Catalog
                     string friendlyTitle = Regex.Replace(baseName, "[_-]+", " ").Trim();
                     try { friendlyTitle = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(friendlyTitle); } catch {}
 
+                    string finalExt = Path.GetExtension(targetPath).ToLowerInvariant();
+                    var meta = ExtractScriptMetadata(targetPath, finalExt, friendlyTitle, category);
+
                     var autoTool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
                     {
                         ["toolId"] = "local-" + Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "-"),
                         ["title"] = friendlyTitle,
                         ["name"] = friendlyTitle,
                         ["category"] = category,
-                        ["description"] = "Tool or shortcut located in your central folder: " + (string.IsNullOrEmpty(relDir) ? fileName : Path.Combine(relDir, fileName)),
-                        ["intendedOutcome"] = "Custom automation tool loaded from central library (" + category + ").",
+                        ["description"] = meta.Description,
+                        ["intendedOutcome"] = meta.Description,
                         ["keywords"] = new List<string> { baseName.ToLowerInvariant(), friendlyTitle.ToLowerInvariant(), category.ToLowerInvariant() },
                         ["tags"] = new List<string> { category.ToLowerInvariant(), actionType.ToLowerInvariant() },
                         ["actionType"] = actionType,
                         ["targetPath"] = targetPath,
                         ["executionMode"] = "Player",
                         ["status"] = "Approved",
-                        ["riskLevel"] = "Medium",
-                        ["owningTeam"] = "Firm Library (" + category + ")",
-                        ["author"] = Environment.UserName,
-                        ["safetyLevel"] = "Modifying",
-                        ["affectedData"] = "Modifies active Revit model elements.",
+                        ["riskLevel"] = meta.SafetyLevel == "ReadOnly" ? "Low" : "Medium",
+                        ["owningTeam"] = "Central BIM Library",
+                        ["author"] = meta.Author,
+                        ["safetyLevel"] = meta.SafetyLevel,
+                        ["affectedData"] = meta.SafetyLevel == "ReadOnly" ? "Read-only model analysis / reporting." : "Modifies active Revit model elements.",
                         ["canAITrigger"] = true,
-                        ["version"] = "v1.0 (Local)",
+                        ["version"] = "v1.0 (Central)",
                         ["iconName"] = iconName,
                         ["revitVersions"] = new List<string> { "2023", "2024", "2025", "2026" },
-                        ["packagesRequired"] = "None reported",
-                        ["lastTestedDate"] = "Auto-discovered local tool",
-                        ["parameters"] = new List<Dictionary<string, object>>()
+                        ["packagesRequired"] = meta.PackagesRequired,
+                        ["lastTestedDate"] = "Central Shared Asset",
+                        ["parameters"] = meta.Parameters
                     };
 
                     tools.Insert(0, autoTool); // Put user's central tools at the top!
                     existing.Add(file);
+                }
+
+                // Check for companion .desc.txt overrides on existing catalog tools
+                foreach (var tool in tools)
+                {
+                    string tp = tool.Str("targetPath");
+                    if (!string.IsNullOrEmpty(tp) && File.Exists(tp))
+                    {
+                        string dir = Path.GetDirectoryName(tp);
+                        string bName = Path.GetFileNameWithoutExtension(tp);
+                        string sidecar = Path.Combine(dir, bName + ".desc.txt");
+                        if (File.Exists(sidecar))
+                        {
+                            try
+                            {
+                                string customDesc = File.ReadAllText(sidecar).Trim();
+                                if (!string.IsNullOrEmpty(customDesc))
+                                {
+                                    tool["description"] = customDesc;
+                                    tool["intendedOutcome"] = customDesc;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Log.Write("ScanScriptsRoot error: " + ex.Message);
             }
+        }
+
+        private class ScriptMetadata
+        {
+            public string Description { get; set; }
+            public string Author { get; set; } = "Central BIM Library";
+            public string PackagesRequired { get; set; } = "None reported";
+            public string SafetyLevel { get; set; } = "Modifying";
+            public List<Dictionary<string, object>> Parameters { get; set; } = new List<Dictionary<string, object>>();
+        }
+
+        /// <summary>
+        /// Scans scripts (Dynamo, pyRevit, Add-ins) and companion description files to extract
+        /// rich documentation, dependencies, parameters, and enterprise descriptions.
+        /// </summary>
+        private static ScriptMetadata ExtractScriptMetadata(string targetPath, string ext, string friendlyTitle, string category)
+        {
+            var meta = new ScriptMetadata();
+
+            // 1. Check for companion description file: {script}.desc.txt or {script}.txt
+            try
+            {
+                string dir = Path.GetDirectoryName(targetPath);
+                string baseName = Path.GetFileNameWithoutExtension(targetPath);
+                string sidecarTxt = Path.Combine(dir, baseName + ".desc.txt");
+                if (!File.Exists(sidecarTxt)) sidecarTxt = Path.Combine(dir, baseName + ".txt");
+
+                if (File.Exists(sidecarTxt))
+                {
+                    string txt = File.ReadAllText(sidecarTxt).Trim();
+                    if (!string.IsNullOrEmpty(txt)) meta.Description = txt;
+                }
+                else
+                {
+                    string sidecarJson = Path.Combine(dir, baseName + ".json");
+                    if (File.Exists(sidecarJson))
+                    {
+                        var parsed = Json.AsObject(Json.Parse(File.ReadAllText(sidecarJson)));
+                        if (parsed != null)
+                        {
+                            if (parsed.TryGetValue("description", out object d) && d != null) meta.Description = d.ToString();
+                            if (parsed.TryGetValue("author", out object a) && a != null) meta.Author = a.ToString();
+                            if (parsed.TryGetValue("safetyLevel", out object s) && s != null) meta.SafetyLevel = s.ToString();
+                            if (parsed.TryGetValue("packagesRequired", out object p) && p != null) meta.PackagesRequired = p.ToString();
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Dynamo (.dyn) parser: Dynamo files are JSON containing Description, Author, NodeLibraryDependencies, Inputs
+            if (string.IsNullOrEmpty(meta.Description) && ext.Equals(".dyn", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(targetPath);
+                    var dyn = Json.AsObject(Json.Parse(json));
+                    if (dyn != null)
+                    {
+                        if (dyn.TryGetValue("Description", out object d) && d is string ds && !string.IsNullOrWhiteSpace(ds))
+                            meta.Description = ds.Trim();
+
+                        if (dyn.TryGetValue("Author", out object a) && a is string asStr && !string.IsNullOrWhiteSpace(asStr))
+                            meta.Author = asStr.Trim();
+
+                        if (dyn.TryGetValue("NodeLibraryDependencies", out object deps) && deps is List<object> depList && depList.Count > 0)
+                        {
+                            var depNames = new List<string>();
+                            foreach (var depObj in depList)
+                            {
+                                if (depObj is Dictionary<string, object> depDict && depDict.TryGetValue("Name", out object dn) && dn != null)
+                                    depNames.Add(dn.ToString());
+                            }
+                            if (depNames.Count > 0) meta.PackagesRequired = string.Join(", ", depNames);
+                        }
+
+                        if (dyn.TryGetValue("Inputs", out object inp) && inp is List<object> inpList)
+                        {
+                            foreach (var item in inpList)
+                            {
+                                if (item is Dictionary<string, object> inpDict)
+                                {
+                                    string pName = inpDict.TryGetValue("Name", out object pn) ? pn?.ToString() : "Parameter";
+                                    string pType = inpDict.TryGetValue("Type", out object pt) ? pt?.ToString() : "string";
+                                    meta.Parameters.Add(new Dictionary<string, object>
+                                    {
+                                        ["name"] = pName,
+                                        ["type"] = pType,
+                                        ["required"] = false
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 3. PyRevit (.py) parser: inspects docstrings ("""..."""), __doc__, and comment headers
+            if (string.IsNullOrEmpty(meta.Description) && ext.Equals(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
+            {
+                try
+                {
+                    string[] lines = File.ReadAllLines(targetPath);
+                    var sb = new StringBuilder();
+                    bool inDocstring = false;
+                    string quoteType = "";
+
+                    for (int i = 0; i < Math.Min(lines.Length, 60); i++)
+                    {
+                        string line = lines[i].Trim();
+                        if (!inDocstring)
+                        {
+                            if (line.StartsWith("\"\"\"") || line.StartsWith("'''"))
+                            {
+                                quoteType = line.Substring(0, 3);
+                                inDocstring = true;
+                                string remainder = line.Substring(3);
+                                if (remainder.EndsWith(quoteType) && remainder.Length >= 3)
+                                {
+                                    sb.Append(remainder.Substring(0, remainder.Length - 3).Trim());
+                                    break;
+                                }
+                                else if (!string.IsNullOrEmpty(remainder))
+                                {
+                                    sb.AppendLine(remainder);
+                                }
+                            }
+                            else if (line.StartsWith("__doc__", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var m = Regex.Match(line, @"__doc__\s*=\s*['""]([^'""]+)['""]");
+                                if (m.Success) { sb.Append(m.Groups[1].Value); break; }
+                            }
+                            else if (line.StartsWith("__author__", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var m = Regex.Match(line, @"__author__\s*=\s*['""]([^'""]+)['""]");
+                                if (m.Success) meta.Author = m.Groups[1].Value;
+                            }
+                            else if (line.StartsWith("# Description:", StringComparison.OrdinalIgnoreCase) || line.StartsWith("# Desc:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                sb.Append(line.Substring(line.IndexOf(':') + 1).Trim());
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (line.EndsWith(quoteType))
+                            {
+                                sb.Append(line.Substring(0, line.Length - 3).Trim());
+                                break;
+                            }
+                            sb.AppendLine(line);
+                        }
+                    }
+
+                    string doc = sb.ToString().Trim();
+                    if (!string.IsNullOrEmpty(doc)) meta.Description = doc;
+                }
+                catch { }
+            }
+
+            // 4. Binary Add-in (.dll) parser: FileVersionInfo metadata
+            if (string.IsNullOrEmpty(meta.Description) && ext.Equals(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
+            {
+                try
+                {
+                    var vi = FileVersionInfo.GetVersionInfo(targetPath);
+                    if (!string.IsNullOrWhiteSpace(vi.FileDescription) && !vi.FileDescription.Equals(Path.GetFileName(targetPath), StringComparison.OrdinalIgnoreCase))
+                        meta.Description = vi.FileDescription;
+                    else if (!string.IsNullOrWhiteSpace(vi.Comments))
+                        meta.Description = vi.Comments;
+
+                    if (!string.IsNullOrWhiteSpace(vi.CompanyName)) meta.Author = vi.CompanyName;
+                }
+                catch { }
+            }
+
+            // 5. Intelligent synthetic enterprise description if none was declared in script
+            if (string.IsNullOrWhiteSpace(meta.Description))
+            {
+                string lower = friendlyTitle.ToLowerInvariant();
+                if (lower.Contains("audit") || lower.Contains("check") || lower.Contains("health"))
+                {
+                    meta.Description = $"Performs automated model audit, quality checks, and reporting for {friendlyTitle}.";
+                    meta.SafetyLevel = "ReadOnly";
+                }
+                else if (lower.Contains("renumber") || lower.Contains("number") || lower.Contains("sequence"))
+                {
+                    meta.Description = $"Sequences and renumbers model parameters according to project rules for {friendlyTitle}.";
+                }
+                else if (lower.Contains("export") || lower.Contains("batch") || lower.Contains("print") || lower.Contains("pdf"))
+                {
+                    meta.Description = $"Batch processes and exports target drawings, sheets, or schedules for {friendlyTitle}.";
+                    meta.SafetyLevel = "ReadOnly";
+                }
+                else if (lower.Contains("clash") || lower.Contains("clearance") || lower.Contains("prep"))
+                {
+                    meta.Description = $"Coordinates geometry, runs interference prep, and validates clearance tolerances for {friendlyTitle}.";
+                }
+                else if (lower.Contains("align") || lower.Contains("sheet") || lower.Contains("view"))
+                {
+                    meta.Description = $"Aligns views and element arrangements according to sheet standard templates for {friendlyTitle}.";
+                }
+                else if (lower.Contains("sync") || lower.Contains("cleanup") || lower.Contains("purge"))
+                {
+                    meta.Description = $"Automates model maintenance, purge routines, and worksharing synchronization for {friendlyTitle}.";
+                }
+                else
+                {
+                    meta.Description = $"Enterprise automation tool for {friendlyTitle} operations in active Revit models.";
+                }
+            }
+
+            return meta;
         }
 
         private static string ResolveShortcutTarget(string shortcutPath)

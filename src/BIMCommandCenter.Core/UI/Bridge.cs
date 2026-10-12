@@ -176,6 +176,34 @@ namespace BIMCommandCenter.Core.UI
                     return new Dictionary<string, object> { ["saved"] = true, ["configPath"] = userConfigPath };
                 }
 
+                case "saveToolDescription":
+                {
+                    string targetPath = payload.Str("targetPath");
+                    string desc = (payload.Str("description") ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(targetPath))
+                        throw new ArgumentException("targetPath is required to save description.");
+
+                    string resolved = targetPath;
+                    string dir = System.IO.Path.GetDirectoryName(resolved);
+                    if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+
+                    string baseName = System.IO.Path.GetFileNameWithoutExtension(resolved);
+                    string sidecarPath = System.IO.Path.Combine(dir, baseName + ".desc.txt");
+
+                    System.IO.File.WriteAllText(sidecarPath, desc);
+
+                    // Re-instantiate catalog so in-memory cache reflects changes immediately
+                    _s.Catalog = new CatalogService(_s.Config, _s.RevitYear ?? "2026");
+
+                    return new Dictionary<string, object>
+                    {
+                        ["ok"] = true,
+                        ["saved"] = true,
+                        ["path"] = sidecarPath,
+                        ["description"] = desc
+                    };
+                }
+
                 default:
                     throw new NotSupportedException("Unknown action: " + action);
             }

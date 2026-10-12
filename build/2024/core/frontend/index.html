@@ -68,15 +68,16 @@
     <!-- HERO SECTION (Collapsible for increased tool density - Blueprint Page 2) -->
     <section id="hero-section" class="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white px-4 pt-3.5 pb-4 transition-all duration-200 shrink-0">
       <div class="flex items-center justify-between">
-        <h1 class="text-sm font-bold tracking-tight flex items-center gap-1.5">
-          <span>What are we solving today?</span>
+        <h1 class="text-xs font-bold tracking-wide uppercase text-slate-200 flex items-center gap-1.5">
+          <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-400"></i>
+          <span>Enterprise Automation Control Plane</span>
         </h1>
         <button onclick="toggleHeroDensity()" id="hero-toggle-btn" class="text-[11px] text-slate-300 hover:text-white flex items-center gap-0.5">
           <span id="hero-toggle-text">Compact</span>
           <i data-lucide="chevron-up" id="hero-toggle-icon" class="w-3 h-3"></i>
         </button>
       </div>
-      <p id="hero-subtext" class="text-[11px] text-slate-300 mt-0.5">Search approved firm automations or filter by capability.</p>
+      <p id="hero-subtext" class="text-[11px] text-slate-300 mt-0.5">Search approved corporate automations or browse by capability domain.</p>
       
       <div class="relative mt-2">
         <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
@@ -402,7 +403,7 @@
             </button>
           </div>
           <p class="text-[11px] text-slate-500 leading-tight">
-            Drop your <code>.dyn</code>, <code>.py</code>, or <code>.dll</code> files into <code>Dynamo\</code>, <code>PyRevit\</code>, or <code>Custom Addins\</code> subfolders.
+            Place corporate <code>.dyn</code>, <code>.py</code>, or <code>.dll</code> files into <code>Dynamo\</code>, <code>PyRevit\</code>, or <code>Custom Addins\</code> subfolders.
           </p>
           <input id="setting-scripts-root" type="text" placeholder="%AppData%\BIMCommandCenter\scripts or \\server\BIM\Scripts"
                  class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400 font-mono">
@@ -461,7 +462,7 @@
           <span class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
             <i data-lucide="table" class="w-4 h-4 text-emerald-600"></i>SharePoint / Catalog Source
           </span>
-          <input id="setting-catalog-source" type="text" placeholder="data/sample_catalog.json or C:\Users\...\BIM_Catalog.xlsx"
+          <input id="setting-catalog-source" type="text" placeholder="\\\\company-server\\BIM\\Catalog.xlsx or https://company-portal/catalog"
                  class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400 font-mono">
         </div>
       </div>
@@ -545,6 +546,9 @@ async function fallbackMock(action, payload) {
   }
   if (action === 'getRunHistory') {
     return JSON.parse(localStorage.getItem('bimcc_mock_history') || '[]');
+  }
+  if (action === 'saveToolDescription') {
+    return { ok: true, saved: true, description: payload.description };
   }
   return { ok: true };
 }
@@ -655,7 +659,7 @@ async function loadCatalog(refresh) {
     const res = await Bridge.call('getCatalog', { refresh });
     tools = res.tools || [];
     setBanner(res.warning);
-    if (refresh) toast(`✓ Catalog refreshed · ${tools.length} automations available`);
+    if (refresh) toast(`Catalog refreshed (${tools.length} automations available)`);
   } catch (e) {
     setBanner('Could not load the tool catalog: ' + e.message);
   }
@@ -967,7 +971,7 @@ async function executeToolConfirmed(toolId) {
   const tool = tools.find(t => t.toolId === toolId);
   if (!tool) return;
 
-  toast(`⏳ Launching ${tool.title} in Revit…`);
+  toast(`Launching ${tool.title} in Revit...`);
 
   try {
     const res = await Bridge.call('executeTool', { toolId });
@@ -1046,7 +1050,7 @@ function showExecutionResult(tool, res) {
     addBot(resultHtml);
   } else {
     // If in tools view, toast and open brief modal
-    toast(isOk ? `✓ Completed in ${duration}s` : `⚠ Failed: ${res.message}`, !isOk);
+    toast(isOk ? `Execution completed in ${duration}s` : `Execution failed: ${res.message}`, !isOk);
     render();
   }
   icons();
@@ -1062,14 +1066,45 @@ function openDetailsModal(toolId) {
   document.getElementById('details-title').textContent = `${t.title} (Specification)`;
   document.getElementById('details-run-btn').setAttribute('onclick', `executeToolConfirmed('${esc(t.toolId)}'); closeDetailsModal();`);
 
+  const currentDesc = t.intendedOutcome || t.description || '';
+
   const html = `
     <!-- Identity & Purpose -->
     <div class="space-y-1">
-      <div class="text-[10px] font-bold text-slate-400 uppercase">1. Identity & Intended Outcome</div>
+      <div class="flex items-center justify-between">
+        <div class="text-[10px] font-bold text-slate-400 uppercase">1. Identity & Capability Description</div>
+        <button type="button" onclick="toggleEditDescription('${esc(t.toolId)}')" id="btn-edit-desc-${esc(t.toolId)}" class="text-[11px] text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1">
+          <i data-lucide="edit-3" class="w-3 h-3"></i>Edit Description
+        </button>
+      </div>
       <div class="p-2.5 bg-slate-50 rounded border border-slate-200">
         <div class="font-bold text-slate-900">${esc(t.title)} (${t.version || 'v1.0.0'})</div>
-        <p class="text-slate-700 mt-1">${esc(t.intendedOutcome || t.description)}</p>
-        <div class="mt-1 text-[11px] text-slate-500"><strong>Category:</strong> ${esc(t.category)} · <strong>Tags:</strong> ${(t.keywords || []).join(', ')}</div>
+        <div id="desc-view-${esc(t.toolId)}" class="text-slate-700 mt-1 leading-relaxed">${esc(currentDesc)}</div>
+        
+        <!-- INLINE CUSTOM DESCRIPTION EDITOR -->
+        <div id="desc-edit-${esc(t.toolId)}" class="hidden mt-2 pt-2 border-t border-slate-200 space-y-2">
+          <div class="flex items-center justify-between">
+            <label class="block text-[10px] font-bold text-slate-500 uppercase">Custom Description (.desc.txt):</label>
+            <span class="text-[10px] text-slate-400 font-mono">Syncs to central folder</span>
+          </div>
+          <textarea id="desc-input-${esc(t.toolId)}" rows="3" class="w-full text-xs p-2 bg-white border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-400 focus:outline-none">${esc(currentDesc)}</textarea>
+          <div class="flex items-center justify-between">
+            <button type="button" onclick="aiDraftDescription('${esc(t.toolId)}')" class="text-[11px] text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded inline-flex items-center gap-1 font-semibold transition">
+              <i data-lucide="sparkles" class="w-3 h-3 text-amber-600"></i>Auto-Draft with AI
+            </button>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="toggleEditDescription('${esc(t.toolId)}')" class="text-[11px] text-slate-500 hover:text-slate-700 px-2 py-1">Cancel</button>
+              <button type="button" onclick="saveCustomDescription('${esc(t.toolId)}')" class="text-[11px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded inline-flex items-center gap-1 shadow-2xs transition">
+                <i data-lucide="check" class="w-3 h-3"></i>Save Description
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-2 text-[11px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-100">
+          <span><strong>Category:</strong> ${esc(t.category)}</span>
+          <span><strong>Tags:</strong> ${(t.keywords || []).join(', ')}</span>
+        </div>
       </div>
     </div>
 
@@ -1078,7 +1113,7 @@ function openDetailsModal(toolId) {
       <div class="text-[10px] font-bold text-slate-400 uppercase">2. Governance & Ownership</div>
       <div class="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 rounded border border-slate-200">
         <div><strong>Owning Team:</strong> ${esc(t.owningTeam || 'BIM Team')}</div>
-        <div><strong>Author/Maintainer:</strong> ${esc(t.author || 'Firm')}</div>
+        <div><strong>Author/Maintainer:</strong> ${esc(t.author || 'Corporate BIM')}</div>
         <div><strong>Status:</strong> <span class="font-bold text-emerald-700">${esc(t.status || 'Approved')}</span></div>
         <div><strong>Approval Ref:</strong> ${esc(t.approvalReference || 'ISO-19650-STD')}</div>
         <div><strong>Risk Level:</strong> ${esc(t.riskLevel || 'Low')}</div>
@@ -1112,6 +1147,88 @@ function openDetailsModal(toolId) {
   document.getElementById('details-content').innerHTML = html;
   document.getElementById('details-modal').classList.remove('hidden');
   icons();
+}
+
+function toggleEditDescription(toolId) {
+  const editBox = document.getElementById(`desc-edit-${toolId}`);
+  const viewBox = document.getElementById(`desc-view-${toolId}`);
+  const btn = document.getElementById(`btn-edit-desc-${toolId}`);
+  if (!editBox) return;
+  const isHidden = editBox.classList.contains('hidden');
+  if (isHidden) {
+    editBox.classList.remove('hidden');
+    viewBox.classList.add('hidden');
+    if (btn) btn.classList.add('hidden');
+    icons();
+  } else {
+    editBox.classList.add('hidden');
+    viewBox.classList.remove('hidden');
+    if (btn) btn.classList.remove('hidden');
+  }
+}
+
+async function saveCustomDescription(toolId) {
+  const t = tools.find(x => x.toolId === toolId);
+  if (!t) return;
+  const input = document.getElementById(`desc-input-${toolId}`);
+  const newDesc = input ? input.value.trim() : '';
+  if (!newDesc) {
+    alert('Please enter a description before saving.');
+    return;
+  }
+
+  try {
+    const res = await Bridge.call('saveToolDescription', {
+      targetPath: t.targetPath,
+      description: newDesc
+    });
+
+    if (res && (res.saved || res.ok)) {
+      t.description = newDesc;
+      t.intendedOutcome = newDesc;
+      const viewBox = document.getElementById(`desc-view-${toolId}`);
+      if (viewBox) viewBox.textContent = newDesc;
+      toggleEditDescription(toolId);
+      render(); // re-render tools list
+      toast('Description saved successfully to central library');
+    } else {
+      alert('Error saving description: ' + (res?.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Failed to save description: ' + err.message);
+  }
+}
+
+function aiDraftDescription(toolId) {
+  const t = tools.find(x => x.toolId === toolId);
+  if (!t) return;
+  const input = document.getElementById(`desc-input-${toolId}`);
+  if (!input) return;
+
+  const title = t.title || 'Automation Tool';
+  const cat = t.category || 'General';
+  const plat = t.actionType || 'Script';
+  const deps = t.packagesRequired && t.packagesRequired !== 'None' && t.packagesRequired !== 'None reported' ? ` (requires ${t.packagesRequired})` : '';
+
+  let drafted = '';
+  const lower = title.toLowerCase();
+  if (lower.includes('door') || lower.includes('room')) {
+    drafted = `Enterprise automation that analyzes room boundaries and sequences ${title.toLowerCase()} across active Revit model levels.`;
+  } else if (lower.includes('audit') || lower.includes('health') || lower.includes('check')) {
+    drafted = `Audits model integrity, checks element warnings, purge parameters, and verifies corporate BIM execution plan compliance.`;
+  } else if (lower.includes('sheet') || lower.includes('viewport') || lower.includes('align')) {
+    drafted = `Standardizes sheet documentation layouts and aligns viewport geometry coordinates across project drawing sets.`;
+  } else if (lower.includes('clash') || lower.includes('geometry') || lower.includes('prep')) {
+    drafted = `Calculates geometric clearance tolerances and prepares structural/architectural coordination envelopes.`;
+  } else if (lower.includes('export') || lower.includes('pdf') || lower.includes('batch')) {
+    drafted = `Batch exports and standardizes target sheet drawings and schedules into verified corporate publication formats.`;
+  } else if (lower.includes('sync') || lower.includes('purge') || lower.includes('clean')) {
+    drafted = `Automates model maintenance, purge routines, and worksharing synchronization standards.`;
+  } else {
+    drafted = `Corporate ${plat} automation for ${title.toLowerCase()} in ${cat} workflows${deps}.`;
+  }
+
+  input.value = drafted;
 }
 
 function closeDetailsModal() {
@@ -1222,9 +1339,9 @@ async function submitIssue(e) {
 
   try {
     await Bridge.call('reportIssue', { toolId, description: desc, executionId: execId });
-    toast('✓ Issue logged to governance audit trail');
+    toast('Issue logged to governance audit trail');
   } catch (err) {
-    toast('✓ Feedback recorded');
+    toast('Feedback recorded');
   }
   closeIssueModal();
 }
@@ -1248,9 +1365,9 @@ async function submitToolForGovernance(e) {
 
   try {
     await Bridge.call('submitIdea', { title, category, platform, problem: outcome, team, safety, deps });
-    toast('✓ Automation submitted to governance review queue');
+    toast('Automation submitted to governance review queue');
   } catch (err) {
-    toast('✓ Automation logged to backlog');
+    toast('Automation logged to backlog');
   }
   closeSubmitModal();
 }
@@ -1275,8 +1392,8 @@ function initChips() {
 
 function clearChat() {
   document.getElementById('chat').innerHTML = '';
-  addBot(`<p class="text-xs">Hello! I am your <strong>Governed BIM Automation Assistant</strong>.</p>
-    <p class="text-[11.5px] text-slate-600 mt-1">Describe a modeling, coordination, or documentation task. I will locate the approved tool from your catalog, explain the prerequisites, and prepare the execution.</p>`);
+  addBot(`<p class="text-xs">Welcome to the <strong>Enterprise BIM Command Center</strong> automation router.</p>
+    <p class="text-[11.5px] text-slate-600 mt-1">Describe a modeling, coordination, or documentation task. I will locate the approved tool from the corporate catalog, review prerequisites, and route safe execution.</p>`);
 }
 
 function sendQuick(q) {
@@ -1300,10 +1417,10 @@ async function captureViewport() {
     if (!res || !res.base64) throw new Error('No image returned');
     chatAttachment = { type: 'image', mimeType: res.mimeType, base64: res.base64, name: 'Active_Revit_Viewport.png' };
     showAttachment(chatAttachment);
-    toast('✓ Attached active viewport image');
+    toast('Attached active viewport image');
     switchTab('ai');
   } catch (err) {
-    toast('⚠ Viewport capture: ' + err.message, true);
+    toast('Viewport capture: ' + err.message, true);
   }
 }
 
@@ -1658,37 +1775,37 @@ async function testAiConnection() {
   const badge = document.getElementById('ai-test-badge');
 
   if (!key && provider !== 'local') {
-    toast('⚠ Please enter an API key first', true);
+    toast('Please enter an API key first', true);
     return;
   }
 
-  badge.textContent = 'Testing…';
+  badge.textContent = 'Testing...';
   badge.className = 'text-[10px] text-amber-600 font-semibold';
 
   try {
     if (provider === 'gemini') {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${key}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      badge.textContent = '✓ Gemini Connected';
+      badge.textContent = 'Gemini Connected';
       badge.className = 'text-[10px] text-emerald-600 font-semibold';
-      toast('✓ Connected to Google Gemini successfully!');
+      toast('Connected to Google Gemini successfully');
     } else if (provider === 'groq') {
       const res = await fetch(`https://api.groq.com/openai/v1/models`, {
         headers: { 'Authorization': `Bearer ${key}` }
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      badge.textContent = '✓ Groq Connected';
+      badge.textContent = 'Groq Connected';
       badge.className = 'text-[10px] text-emerald-600 font-semibold';
-      toast('✓ Connected to Groq successfully!');
+      toast('Connected to Groq successfully');
     } else {
-      badge.textContent = '✓ Local Configured';
+      badge.textContent = 'Local Configured';
       badge.className = 'text-[10px] text-blue-600 font-semibold';
-      toast('✓ Local AI settings verified');
+      toast('Local AI configuration verified');
     }
   } catch (err) {
-    badge.textContent = '✕ Connection failed';
+    badge.textContent = 'Connection failed';
     badge.className = 'text-[10px] text-rose-600 font-semibold';
-    toast('⚠ Connection failed: ' + err.message, true);
+    toast('Connection failed: ' + err.message, true);
   }
 }
 
@@ -1698,7 +1815,7 @@ async function openFolder() {
     const res = await Bridge.call('openFolder', { path });
     toast('Opened: ' + (res.path || 'Scripts folder'));
   } catch (err) {
-    toast('⚠ ' + err.message, true);
+    toast('Could not open folder: ' + err.message, true);
   }
 }
 
@@ -1727,7 +1844,7 @@ async function saveSettings() {
 
   updateAiBadge();
   closeSettingsModal();
-  toast('✓ Settings saved! Refreshing tools…');
+  toast('Settings saved successfully. Refreshing tools...');
   await loadCatalog(true);
 }
 
