@@ -85,12 +85,69 @@ namespace BIMCommandCenter.Core.Revit
                     return RunNativeAddin(app, target, title, tool);
                 case "PostableCommand":
                     return RunPostable(app, target, title);
+                case "Grasshopper":
+                case "Rhino.Inside":
+                case "Rhino":
+                    return RunGrasshopperOrRhino(app, tool, ResolvePath(target));
                 case "Url":
                     Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
                     return RunResult.Success("Opened " + target);
                 default:
                     return RunResult.Fail("Unknown actionType \"" + actionType + "\" for " + title);
             }
+        }
+
+        private RunResult RunGrasshopperOrRhino(UIApplication app, Dictionary<string, object> tool, string scriptPath)
+        {
+            string title = tool.Str("title");
+
+            // 1. Try invoking Rhino.Inside.Revit if loaded in this Revit session
+            try
+            {
+                var rhinoCmd = RevitCommandId.LookupCommandId("CustomCtrl_%CustomCtrl_%Rhinoceros%Rhinoceros%CommandStartRhino");
+                if (rhinoCmd != null && app.CanPostCommand(rhinoCmd))
+                {
+                    app.PostCommand(rhinoCmd);
+                    if (File.Exists(scriptPath))
+                    {
+                        Process.Start(new ProcessStartInfo(scriptPath) { UseShellExecute = true });
+                    }
+                    return RunResult.Success("Launched Rhino.Inside session with " + title);
+                }
+            }
+            catch { }
+
+            // 2. Check for Standalone Rhino executable (Rhino 8 or Rhino 7)
+            string[] possibleRhinoPaths = new[]
+            {
+                @"C:\Program Files\Rhino 8\System\Rhino.exe",
+                @"C:\Program Files\Rhino 7\System\Rhino.exe",
+                @"C:\Program Files\Rhinoceros 7\System\Rhino.exe"
+            };
+
+            foreach (var rExe in possibleRhinoPaths)
+            {
+                if (File.Exists(rExe))
+                {
+                    var psi = new ProcessStartInfo(rExe);
+                    if (File.Exists(scriptPath))
+                    {
+                        psi.Arguments = $"\"{scriptPath}\"";
+                    }
+                    psi.UseShellExecute = true;
+                    Process.Start(psi);
+                    return RunResult.Success("Launched standalone Rhino: " + title);
+                }
+            }
+
+            // 3. Fallback: If .gh file exists, try default Windows file association
+            if (File.Exists(scriptPath))
+            {
+                Process.Start(new ProcessStartInfo(scriptPath) { UseShellExecute = true });
+                return RunResult.Success("Opened " + Path.GetFileName(scriptPath) + " in default viewer");
+            }
+
+            return RunResult.Fail("Grasshopper definition requires Rhino 7/8 or Rhino.Inside.Revit on this workstation.\n\nFile: " + scriptPath);
         }
 
         private string ResolvePath(string target)

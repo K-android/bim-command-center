@@ -103,8 +103,10 @@ namespace BIMCommandCenter.Core.Catalog
                 string[] pyFiles = Directory.GetFiles(root, "*.py", SearchOption.AllDirectories);
                 string[] lnkFiles = Directory.GetFiles(root, "*.lnk", SearchOption.AllDirectories);
                 string[] dllFiles = Directory.GetFiles(root, "*.dll", SearchOption.AllDirectories);
+                string[] ghFiles = Directory.GetFiles(root, "*.gh", SearchOption.AllDirectories);
+                string[] ghxFiles = Directory.GetFiles(root, "*.ghx", SearchOption.AllDirectories);
 
-                foreach (string file in dynFiles.Concat(pyFiles).Concat(lnkFiles).Concat(dllFiles))
+                foreach (string file in dynFiles.Concat(pyFiles).Concat(lnkFiles).Concat(dllFiles).Concat(ghFiles).Concat(ghxFiles))
                 {
                     string fileName = Path.GetFileName(file);
                     string baseName = Path.GetFileNameWithoutExtension(file);
@@ -123,8 +125,8 @@ namespace BIMCommandCenter.Core.Catalog
                     if (existing.Contains(file) || existing.Contains(fileName)) continue;
 
                     string targetPath = file;
-                    string actionType = ext == ".dyn" ? "Dynamo" : (ext == ".py" ? "PyRevit" : "NativeAddin");
-                    string iconName = ext == ".dyn" ? "PlayCircle" : (ext == ".py" ? "Code" : "Activity");
+                    string actionType = (ext == ".gh" || ext == ".ghx") ? "Grasshopper" : (ext == ".dyn" ? "Dynamo" : (ext == ".py" ? "PyRevit" : "NativeAddin"));
+                    string iconName = (ext == ".gh" || ext == ".ghx") ? "Box" : (ext == ".dyn" ? "PlayCircle" : (ext == ".py" ? "Code" : "Activity"));
 
                     if (ext == ".lnk")
                     {
@@ -133,8 +135,8 @@ namespace BIMCommandCenter.Core.Catalog
                         {
                             targetPath = resolved;
                             string rExt = Path.GetExtension(resolved).ToLowerInvariant();
-                            actionType = rExt == ".dyn" ? "Dynamo" : (rExt == ".py" ? "PyRevit" : "NativeAddin");
-                            iconName = rExt == ".dyn" ? "PlayCircle" : (rExt == ".py" ? "Code" : "Activity");
+                            actionType = (rExt == ".gh" || rExt == ".ghx") ? "Grasshopper" : (rExt == ".dyn" ? "Dynamo" : (rExt == ".py" ? "PyRevit" : "NativeAddin"));
+                            iconName = (rExt == ".gh" || rExt == ".ghx") ? "Box" : (rExt == ".dyn" ? "PlayCircle" : (rExt == ".py" ? "Code" : "Activity"));
                         }
                     }
 
