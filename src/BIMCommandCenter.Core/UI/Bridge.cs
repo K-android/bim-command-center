@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Autodesk.Revit.UI;
 using BIMCommandCenter.Core.Catalog;
@@ -201,6 +203,114 @@ namespace BIMCommandCenter.Core.UI
                         ["saved"] = true,
                         ["path"] = sidecarPath,
                         ["description"] = desc
+                    };
+                }
+
+                case "getRibbonTools":
+                {
+                    var pinned = UserRibbonManager.LoadPinnedTools();
+                    return new Dictionary<string, object>
+                    {
+                        ["tools"] = pinned,
+                        ["count"] = pinned.Count
+                    };
+                }
+
+                case "updateRibbonTools":
+                {
+                    var list = payload.TryGetValue("tools", out object tList) ? Json.AsList(tList) : null;
+                    if (list == null && payload.TryGetValue("toolIds", out object idList))
+                    {
+                        var ids = Json.AsList(idList)?.Select(x => x?.ToString()).ToList() ?? new List<string>();
+                        var currentCat = await _s.Catalog.GetAsync(false);
+                        list = ids.Select(id => (object)(currentCat.Tools.FirstOrDefault(t => t.Str("toolId") == id) ?? new Dictionary<string, object> { ["toolId"] = id, ["title"] = id })).ToList();
+                    }
+
+                    var toolDicts = (list ?? new List<object>()).OfType<Dictionary<string, object>>().ToList();
+                    UserRibbonManager.SavePinnedTools(toolDicts);
+
+                    return new Dictionary<string, object>
+                    {
+                        ["saved"] = true,
+                        ["count"] = toolDicts.Count,
+                        ["message"] = "Revit Ribbon updated. Pinned tools are saved to 'My Quick Tools' panel."
+                    };
+                }
+
+                case "registerTool":
+                {
+                    string srcFile = payload.Str("filePath");
+                    string title = payload.Str("title");
+                    string cat = payload.Str("category", "Dynamo");
+                    string desc = (payload.Str("description") ?? "").Trim();
+                    bool makeShortcut = payload.Bool("createShortcut", true);
+
+                    if (string.IsNullOrWhiteSpace(srcFile) || !File.Exists(srcFile))
+                        throw new FileNotFoundException("Source tool file not found: " + srcFile);
+
+                    string root = Environment.ExpandEnvironmentVariables(_s.Config.ScriptsRoot);
+                    if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                    {
+                        root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BIMCommandCenter", "scripts");
+                    }
+
+                    string targetFolder = Path.Combine(root, cat);
+                    Directory.CreateDirectory(targetFolder);
+
+                    string srcExt = Path.GetExtension(srcFile);
+                    string cleanName = string.IsNullOrWhiteSpace(title) 
+                        ? Path.GetFileNameWithoutExtension(srcFile)
+                        : System.Text.RegularExpressions.Regex.Replace(title, @"[\\/:*?""<>|]", "_");
+
+                    string destFile;
+                    if (makeShortcut)
+                    {
+                        destFile = Path.Combine(targetFolder, cleanName + ".lnk");
+                        try
+                        {
+                            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                            if (shellType != null)
+                            {
+                                object shell = Activator.CreateInstance(shellType);
+                                MethodInfo createShortcut = shellType.GetMethod("CreateShortcut");
+                                if (createShortcut != null)
+                                {
+                                    object shortcut = createShortcut.Invoke(shell, new object[] { destFile });
+                                    shortcut.GetType().GetProperty("TargetPath")?.SetValue(shortcut, srcFile, null);
+                                    shortcut.GetType().GetProperty("Description")?.SetValue(shortcut, desc, null);
+                                    shortcut.GetType().GetMethod("Save")?.Invoke(shortcut, null);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Write("CreateShortcut error: " + ex.Message);
+                            destFile = Path.Combine(targetFolder, cleanName + srcExt);
+                            File.Copy(srcFile, destFile, true);
+                        }
+                    }
+                    else
+                    {
+                        destFile = Path.Combine(targetFolder, cleanName + srcExt);
+                        File.Copy(srcFile, destFile, true);
+                    }
+
+                    // Save companion description
+                    string descFile = Path.Combine(targetFolder, cleanName + ".desc.txt");
+                    if (!string.IsNullOrEmpty(desc))
+                    {
+                        File.WriteAllText(descFile, desc);
+                    }
+
+                    // Re-instantiate catalog
+                    _s.Catalog = new CatalogService(_s.Config, _s.RevitYear ?? "2026");
+
+                    return new Dictionary<string, object>
+                    {
+                        ["ok"] = true,
+                        ["registered"] = true,
+                        ["path"] = destFile,
+                        ["title"] = cleanName
                     };
                 }
 
