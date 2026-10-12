@@ -148,10 +148,22 @@ namespace BIMCommandCenter.Core.UI
                         ["catalogSource"] = _s.Config.CatalogSource,
                         ["catalogSheet"] = _s.Config.CatalogSheet,
                         ["scriptsRoot"] = _s.Config.ScriptsRoot,
+                        ["telemetryFolder"] = _s.Config.TelemetryFolder,
+                        ["knowledgeGraphPath"] = _s.Config.KnowledgeGraphPath,
                         ["ideasEndpoint"] = _s.Config.IdeasEndpoint,
                         ["ideasFolder"] = _s.Config.IdeasFolder,
                         ["configPath"] = _s.Config.LoadedFrom
                     };
+                }
+
+                case "getFirmUsage":
+                {
+                    return GetFirmUsageStats();
+                }
+
+                case "getKnowledgeGraph":
+                {
+                    return await GenerateKnowledgeGraphAsync();
                 }
 
                 case "saveConfig":
@@ -322,19 +334,10 @@ namespace BIMCommandCenter.Core.UI
         private static string AuditHistoryPath =>
             System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BIMCommandCenter", "audit", "run_history.json");
 
-        private static void RecordRunAudit(Dictionary<string, object> tool, RunResult result, Dictionary<string, object> payload)
+        private void RecordRunAudit(Dictionary<string, object> tool, RunResult result, Dictionary<string, object> payload)
         {
             try
             {
-                string path = AuditHistoryPath;
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-
-                var history = new List<object>();
-                if (System.IO.File.Exists(path))
-                {
-                    try { history = Json.AsList(Json.Parse(System.IO.File.ReadAllText(path))) ?? history; } catch {}
-                }
-
                 var entry = new Dictionary<string, object>
                 {
                     ["id"] = result.ExecutionId,
@@ -354,15 +357,212 @@ namespace BIMCommandCenter.Core.UI
                     ["timestamp"] = result.ExecutedAt.ToString("o")
                 };
 
-                history.Insert(0, entry);
-                if (history.Count > 100) history = history.Take(100).ToList();
+                // 1. Local AppData Audit Store
+                string path = AuditHistoryPath;
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
 
+                var history = new List<object>();
+                if (System.IO.File.Exists(path))
+                {
+                    try { history = Json.AsList(Json.Parse(System.IO.File.ReadAllText(path))) ?? history; } catch {}
+                }
+
+                history.Insert(0, entry);
+                if (history.Count > 250) history = history.Take(250).ToList();
                 System.IO.File.WriteAllText(path, Json.Stringify(history));
+
+                // 2. Central Shared Enterprise Telemetry (if configured via settings or scripts folder default)
+                string centralFolder = !string.IsNullOrWhiteSpace(_s.Config.TelemetryFolder)
+                    ? _s.Config.TelemetryFolder
+                    : (!string.IsNullOrWhiteSpace(_s.Config.ScriptsRoot) ? System.IO.Path.Combine(_s.Config.ScriptsRoot, "telemetry") : null);
+
+                if (!string.IsNullOrWhiteSpace(centralFolder))
+                {
+                    try
+                    {
+                        System.IO.Directory.CreateDirectory(centralFolder);
+                        string centralFile = System.IO.Path.Combine(centralFolder, "firm_runs.jsonl");
+                        string jsonLine = Json.Stringify(entry).Replace("\r", "").Replace("\n", "") + Environment.NewLine;
+                        System.IO.File.AppendAllText(centralFile, jsonLine);
+                    }
+                    catch { }
+                }
             }
             catch (Exception ex)
             {
                 Log.Write("RecordRunAudit error: " + ex.Message);
             }
+        }
+
+        private Dictionary<string, object> GetFirmUsageStats()
+        {
+            try
+            {
+                string centralFolder = !string.IsNullOrWhiteSpace(_s.Config.TelemetryFolder)
+                    ? _s.Config.TelemetryFolder
+                    : (!string.IsNullOrWhiteSpace(_s.Config.ScriptsRoot) ? System.IO.Path.Combine(_s.Config.ScriptsRoot, "telemetry") : null);
+
+                var runList = new List<Dictionary<string, object>>();
+
+                // Try reading central corporate runs
+                if (!string.IsNullOrWhiteSpace(centralFolder))
+                {
+                    string centralFile = System.IO.Path.Combine(centralFolder, "firm_runs.jsonl");
+                    if (System.IO.File.Exists(centralFile))
+                    {
+                        var lines = System.IO.File.ReadAllLines(centralFile);
+                        foreach (var line in lines)
+                        {
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+                            try
+                            {
+                                var parsed = Json.AsObject(Json.Parse(line));
+                                if (parsed != null) runList.Add(parsed);
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                // Fallback to local history if central has no records yet
+                if (runList.Count == 0)
+                {
+                    var local = GetRunHistory();
+                    runList = local.OfType<Dictionary<string, object>>().ToList();
+                }
+
+                // Aggregate statistics
+                var toolCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var toolNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var toolUsers = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                var userCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                int totalRuns = runList.Count;
+                int successRuns = 0;
+
+                foreach (var r in runList)
+                {
+                    string tid = r.Str("toolId") ?? "unknown";
+                    string tTitle = r.Str("toolTitle") ?? tid;
+                    string user = r.Str("user") ?? "unknown";
+                    bool ok = r.Bool("ok");
+
+                    if (ok) successRuns++;
+
+                    toolCounts[tid] = toolCounts.TryGetValue(tid, out int tc) ? tc + 1 : 1;
+                    toolNames[tid] = tTitle;
+                    
+                    if (!toolUsers.ContainsKey(tid)) toolUsers[tid] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    toolUsers[tid].Add(user);
+
+                    userCounts[user] = userCounts.TryGetValue(user, out int uc) ? uc + 1 : 1;
+                }
+
+                var leaderboard = toolCounts
+                    .OrderByDescending(kv => kv.Value)
+                    .Take(15)
+                    .Select(kv => new Dictionary<string, object>
+                    {
+                        ["toolId"] = kv.Key,
+                        ["title"] = toolNames.TryGetValue(kv.Key, out var n) ? n : kv.Key,
+                        ["runCount"] = kv.Value,
+                        ["uniqueUsers"] = toolUsers.TryGetValue(kv.Key, out var us) ? us.Count : 0
+                    })
+                    .ToList();
+
+                return new Dictionary<string, object>
+                {
+                    ["totalRuns"] = totalRuns,
+                    ["successRuns"] = successRuns,
+                    ["uniqueUsersTotal"] = userCounts.Keys.Count,
+                    ["uniqueToolsUsed"] = toolCounts.Keys.Count,
+                    ["leaderboard"] = leaderboard,
+                    ["centralSourceActive"] = !string.IsNullOrWhiteSpace(centralFolder) && System.IO.Directory.Exists(centralFolder)
+                };
+            }
+            catch (Exception ex)
+            {
+                Log.Write("GetFirmUsageStats error: " + ex.Message);
+                return new Dictionary<string, object> { ["error"] = ex.Message };
+            }
+        }
+
+        private async Task<Dictionary<string, object>> GenerateKnowledgeGraphAsync()
+        {
+            var catalog = await _s.Catalog.GetAsync(false);
+            var nodes = new List<Dictionary<string, object>>();
+            var links = new List<Dictionary<string, object>>();
+            var nodeIds = new HashSet<string>();
+
+            // Root Domain Nodes
+            var categories = catalog.Tools.Select(t => t.Str("category")).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+            foreach (var cat in categories)
+            {
+                string catId = "cat:" + cat;
+                if (nodeIds.Add(catId))
+                {
+                    nodes.Add(new Dictionary<string, object>
+                    {
+                        ["id"] = catId,
+                        ["name"] = cat,
+                        ["group"] = "Category",
+                        ["val"] = 18,
+                        ["color"] = "#2563eb"
+                    });
+                }
+            }
+
+            // Tool Nodes & Links to Category
+            foreach (var t in catalog.Tools)
+            {
+                string tid = t.Str("toolId");
+                string cat = t.Str("category");
+                string plat = t.Str("actionType");
+                string color = plat == "Grasshopper" ? "#0d9488" : (plat == "Dynamo" ? "#3b82f6" : (plat == "PyRevit" ? "#f59e0b" : "#8b5cf6"));
+
+                if (nodeIds.Add(tid))
+                {
+                    nodes.Add(new Dictionary<string, object>
+                    {
+                        ["id"] = tid,
+                        ["name"] = t.Str("title"),
+                        ["group"] = plat,
+                        ["val"] = 12,
+                        ["color"] = color,
+                        ["desc"] = t.Str("description"),
+                        ["author"] = t.Str("author")
+                    });
+                }
+
+                if (!string.IsNullOrEmpty(cat))
+                {
+                    links.Add(new Dictionary<string, object>
+                    {
+                        ["source"] = "cat:" + cat,
+                        ["target"] = tid,
+                        ["relationship"] = "CONTAINS"
+                    });
+                }
+            }
+
+            // Export to custom path if set
+            if (!string.IsNullOrWhiteSpace(_s.Config.KnowledgeGraphPath))
+            {
+                try
+                {
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_s.Config.KnowledgeGraphPath));
+                    var exportData = new Dictionary<string, object> { ["nodes"] = nodes, ["links"] = links };
+                    System.IO.File.WriteAllText(_s.Config.KnowledgeGraphPath, Json.Stringify(exportData));
+                }
+                catch { }
+            }
+
+            return new Dictionary<string, object>
+            {
+                ["nodes"] = nodes,
+                ["links"] = links,
+                ["nodeCount"] = nodes.Count,
+                ["linkCount"] = links.Count
+            };
         }
 
         private static List<object> GetRunHistory()

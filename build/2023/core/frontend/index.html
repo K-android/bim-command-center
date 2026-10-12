@@ -262,12 +262,32 @@
       </div>
     </div>
 
+    <!-- ENTERPRISE SCRIPT USAGE LEADERBOARD & KNOWLEDGE GRAPH (NEW) -->
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+      <div class="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-semibold">
+        <div class="flex items-center gap-2">
+          <i data-lucide="bar-chart-2" class="w-4 h-4 text-purple-600"></i>
+          <span>Firm-Wide Script Usage Leaderboard</span>
+          <span id="firm-telemetry-badge" class="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono">Telemetry: Local</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="exportKnowledgeGraphJson()" class="text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-1 rounded-md flex items-center gap-1 transition" title="Export 3D Knowledge Graph payload for backend analysis / training">
+            <i data-lucide="network" class="w-3.5 h-3.5"></i>
+            <span>Export 3D Graph</span>
+          </button>
+        </div>
+      </div>
+      <div id="firm-leaderboard-container" class="p-3 text-xs">
+        <div class="text-slate-400 text-center py-2">Loading firm-wide script usage...</div>
+      </div>
+    </div>
+
     <!-- RECENT RUNS LIST -->
     <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
       <div class="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-semibold">
         <div class="flex items-center gap-2">
           <span>Execution History</span>
-          <span class="text-[11px] text-slate-400 font-normal">Audit entries recorded locally</span>
+          <span class="text-[11px] text-slate-400 font-normal">Audit entries recorded</span>
         </div>
         <button onclick="exportActivityCsv()" class="text-[11px] font-semibold text-slate-700 hover:text-blue-700 bg-white border border-slate-200 hover:bg-slate-100 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-2xs transition" title="Export audit trail to CSV file">
           <i data-lucide="download" class="w-3.5 h-3.5 text-slate-500"></i>
@@ -508,6 +528,30 @@
           </span>
           <input id="setting-catalog-source" type="text" placeholder="\\\\company-server\\BIM\\Catalog.xlsx or https://company-portal/catalog"
                  class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400 font-mono">
+        </div>
+
+        <!-- SECTION 4: ENTERPRISE TELEMETRY & KNOWLEDGE GRAPH (PLUGGABLE PATHS) -->
+        <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+              <i data-lucide="network" class="w-4 h-4 text-purple-600"></i>Enterprise Analytics & Knowledge Graph
+            </span>
+            <span class="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded font-semibold">Configurable</span>
+          </div>
+          
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">Central Team Telemetry Folder (Shared Log Location)</label>
+            <p class="text-[10px] text-slate-500 mb-1">Company shared SMB path where all users append usage runs for firm-wide analytics.</p>
+            <input id="setting-telemetry-folder" type="text" placeholder="\\\\company-server\\BIM\\telemetry or %AppData%\\BIMCommandCenter\\telemetry"
+                   class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md font-mono">
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">3D Knowledge Graph Export Path (Backend Output)</label>
+            <p class="text-[10px] text-slate-500 mb-1">JSON file location written for backend 3D visualization, training, and graph-RAG pipelines.</p>
+            <input id="setting-kg-path" type="text" placeholder="\\\\company-server\\BIM\\analytics\\knowledge_graph.json"
+                   class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md font-mono">
+          </div>
         </div>
       </div>
 
@@ -808,6 +852,8 @@ function loadStoredSettings() {
   currentConfig.aiBaseUrl = localStorage.getItem('bimcc_ai_url') || 'http://localhost:11434/v1';
   currentConfig.scriptsRoot = localStorage.getItem('bimcc_scriptsRoot') || '';
   currentConfig.catalogSource = localStorage.getItem('bimcc_catalogSource') || 'data/sample_catalog.json';
+  currentConfig.telemetryFolder = localStorage.getItem('bimcc_telemetryFolder') || '';
+  currentConfig.knowledgeGraphPath = localStorage.getItem('bimcc_knowledgeGraphPath') || '';
 }
 
 function updateAiBadge() {
@@ -1445,6 +1491,9 @@ async function loadActivity() {
   document.getElementById('activity-count').textContent = runs.length;
   document.getElementById('activity-count').classList.toggle('hidden', runs.length === 0);
 
+  // Load firm-wide usage analytics
+  loadFirmUsageStats();
+
   const container = document.getElementById('activity-list');
   if (runs.length === 0) {
     container.innerHTML = `
@@ -1910,8 +1959,10 @@ async function openSettingsModal() {
   document.getElementById('setting-ai-key').value = currentConfig.aiApiKey;
   document.getElementById('setting-ai-model').value = currentConfig.aiModel;
   document.getElementById('setting-ai-url').value = currentConfig.aiBaseUrl;
-  document.getElementById('setting-scripts-root').value = currentConfig.scriptsRoot;
-  document.getElementById('setting-catalog-source').value = currentConfig.catalogSource;
+  document.getElementById('setting-scripts-root').value = currentConfig.scriptsRoot || '';
+  document.getElementById('setting-catalog-source').value = currentConfig.catalogSource || '';
+  document.getElementById('setting-telemetry-folder').value = currentConfig.telemetryFolder || '';
+  document.getElementById('setting-kg-path').value = currentConfig.knowledgeGraphPath || '';
 
   onAiProviderChange();
   document.getElementById('settings-modal').classList.remove('hidden');
@@ -2010,6 +2061,8 @@ async function saveSettings() {
   currentConfig.aiBaseUrl = document.getElementById('setting-ai-url').value.trim();
   currentConfig.scriptsRoot = document.getElementById('setting-scripts-root').value.trim();
   currentConfig.catalogSource = document.getElementById('setting-catalog-source').value.trim() || 'data/sample_catalog.json';
+  currentConfig.telemetryFolder = document.getElementById('setting-telemetry-folder').value.trim();
+  currentConfig.knowledgeGraphPath = document.getElementById('setting-kg-path').value.trim();
 
   localStorage.setItem('bimcc_ai_provider', currentConfig.aiProvider);
   localStorage.setItem('bimcc_ai_key', currentConfig.aiApiKey);
@@ -2017,11 +2070,15 @@ async function saveSettings() {
   localStorage.setItem('bimcc_ai_url', currentConfig.aiBaseUrl);
   localStorage.setItem('bimcc_scriptsRoot', currentConfig.scriptsRoot);
   localStorage.setItem('bimcc_catalogSource', currentConfig.catalogSource);
+  localStorage.setItem('bimcc_telemetryFolder', currentConfig.telemetryFolder);
+  localStorage.setItem('bimcc_knowledgeGraphPath', currentConfig.knowledgeGraphPath);
 
   try {
     await Bridge.call('saveConfig', {
       scriptsRoot: currentConfig.scriptsRoot,
       catalogSource: currentConfig.catalogSource,
+      telemetryFolder: currentConfig.telemetryFolder,
+      knowledgeGraphPath: currentConfig.knowledgeGraphPath,
       aiEndpoint: currentConfig.aiBaseUrl
     });
   } catch (e) {}
@@ -2301,6 +2358,79 @@ function exportActivityCsv() {
   }).catch(err => {
     toast('Export failed: ' + err.message, true);
   });
+}
+
+// ======================================================================
+//  Firm-Wide Script Usage Leaderboard & 3D Knowledge Graph Export
+// ======================================================================
+async function loadFirmUsageStats() {
+  const container = document.getElementById('firm-leaderboard-container');
+  const badge = document.getElementById('firm-telemetry-badge');
+  if (!container) return;
+
+  try {
+    const stats = await Bridge.call('getFirmUsage');
+    if (!stats || !stats.leaderboard) {
+      container.innerHTML = '<div class="text-slate-400 text-center py-2">No firm usage data recorded yet.</div>';
+      return;
+    }
+
+    if (badge) {
+      badge.textContent = stats.centralSourceActive ? 'Telemetry: Central Server' : 'Telemetry: Local Fallback';
+      badge.className = stats.centralSourceActive ? 'text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-mono font-semibold' : 'text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono';
+    }
+
+    if (!stats.leaderboard.length) {
+      container.innerHTML = '<div class="text-slate-400 text-center py-2">No tools have been executed across the team yet.</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        ${stats.leaderboard.map((item, idx) => `
+          <div class="bg-slate-50 border border-slate-200/80 rounded-lg p-2 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="w-5 h-5 rounded-full ${idx === 0 ? 'bg-amber-100 text-amber-700 font-bold' : (idx < 3 ? 'bg-blue-100 text-blue-700 font-bold' : 'bg-slate-200 text-slate-600')} text-[10px] flex items-center justify-center shrink-0 font-mono">
+                ${idx + 1}
+              </span>
+              <div class="truncate">
+                <div class="font-bold text-slate-800 text-[11px] truncate">${esc(item.title)}</div>
+                <div class="text-[10px] text-slate-500">${item.uniqueUsers} unique team user(s)</div>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <span class="text-xs font-bold text-purple-700 font-mono">${item.runCount}</span>
+              <span class="text-[10px] text-slate-400 block -mt-0.5">runs</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    icons();
+  } catch (err) {
+    container.innerHTML = `<div class="text-slate-400 text-center py-2">Leaderboard unavailable: ${esc(err.message)}</div>`;
+  }
+}
+
+async function exportKnowledgeGraphJson() {
+  toast('Generating 3D Knowledge Graph payload...');
+  try {
+    const graph = await Bridge.call('getKnowledgeGraph');
+    if (!graph || !graph.nodes) throw new Error('No graph payload returned');
+
+    const jsonStr = JSON.stringify(graph, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `BIM_Knowledge_Graph_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast(`Exported 3D Graph (${graph.nodeCount} nodes, ${graph.linkCount} links)`);
+  } catch (err) {
+    toast('Export failed: ' + err.message, true);
+  }
 }
 
 // ======================================================================

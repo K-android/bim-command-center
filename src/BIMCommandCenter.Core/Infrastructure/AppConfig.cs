@@ -14,6 +14,8 @@ namespace BIMCommandCenter.Core.Infrastructure
         public string CatalogSource { get; private set; }
         public string CatalogSheet { get; private set; }
         public string ScriptsRoot { get; private set; }
+        public string TelemetryFolder { get; private set; }
+        public string KnowledgeGraphPath { get; private set; }
         public string IdeasEndpoint { get; private set; }
         public string IdeasFolder { get; private set; }
         public string FrontendUrl { get; private set; }
@@ -57,6 +59,8 @@ namespace BIMCommandCenter.Core.Infrastructure
                 CatalogSource = Expand(d.Str("catalogSource", "data/sample_catalog.json")),
                 CatalogSheet = d.Str("catalogSheet", ""),
                 ScriptsRoot = Expand(d.Str("scriptsRoot", "")),
+                TelemetryFolder = Expand(d.Str("telemetryFolder", "")),
+                KnowledgeGraphPath = Expand(d.Str("knowledgeGraphPath", "")),
                 IdeasEndpoint = d.Str("ideasEndpoint", ""),
                 IdeasFolder = Expand(d.Str("ideasFolder", "")),
                 FrontendUrl = d.Str("frontendUrl", ""),
