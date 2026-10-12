@@ -225,28 +225,33 @@ namespace BIMCommandCenter.Core
                 bool hasRhino8 = System.IO.File.Exists(rhino8Exe);
                 bool hasRhino7 = System.IO.File.Exists(rhino7Exe);
 
-                var td = new TaskDialog("Rhino ↔ Revit Exchange")
+                var td = new TaskDialog("Rhino ↔ Revit Interoperability")
                 {
-                    MainInstruction = "Rhino ↔ Revit Computational Exchange",
-                    MainContent = (doc != null ? $"Active Model: {doc.Title}\n\n" : "No active Revit project open.\n\n") +
-                                  (hasRhino8 ? "✓ Rhino 8 detected on this workstation.\n" : (hasRhino7 ? "✓ Rhino 7 detected on this workstation.\n" : "• Rhino desktop standalone not found in default path.\n")) +
-                                  "Connect live geometry streams, execute Grasshopper definitions, or open the BIM Command Center.",
+                    MainInstruction = "Rhino.Inside.Revit Not Detected",
+                    MainContent = "Rhino.Inside.Revit connects Rhino & Grasshopper directly into Revit's live memory space for bi-directional geometry streaming.\n\n" +
+                                  "To use live interoperability, install Rhino.Inside.Revit on this workstation (free for Rhino 7 & 8 license holders).\n\n" +
+                                  (hasRhino8 ? "✓ Standalone Rhino 8 is installed.\n" : (hasRhino7 ? "✓ Standalone Rhino 7 is installed.\n" : "• Standalone Rhino 7/8 was not detected in default directories.\n")),
                     CommonButtons = TaskDialogCommonButtons.Close
                 };
 
-                td.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Open Command Center (Computational Tools)", "Filter and browse computational scripts and exchange tools.");
+                td.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Download Rhino.Inside.Revit (Official Installer)", "Open https://www.rhino3d.com/inside/revit/ in default web browser.");
+                td.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Open Command Center (Rhino Computational Tools)", "Browse Grasshopper scripts (.gh) and computational design catalog.");
                 if (hasRhino8 || hasRhino7)
                 {
-                    td.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, "Launch Rhino Desktop Application", "Start standalone Rhino session with Grasshopper.");
+                    td.AddCommandLink(TaskDialogCommandLinkId.CommandLink3, "Launch Standalone Rhino Desktop", "Open external Rhino 3D session.");
                 }
 
                 TaskDialogResult res = td.Show();
                 if (res == TaskDialogResult.CommandLink1)
                 {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://www.rhino3d.com/inside/revit/8/") { UseShellExecute = true });
+                }
+                else if (res == TaskDialogResult.CommandLink2)
+                {
                     DockablePane pane = uiApp.GetDockablePane(CoreApp.PaneId);
                     if (!pane.IsShown()) pane.Show();
                 }
-                else if (res == TaskDialogResult.CommandLink2)
+                else if (res == TaskDialogResult.CommandLink3)
                 {
                     string target = hasRhino8 ? rhino8Exe : rhino7Exe;
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
