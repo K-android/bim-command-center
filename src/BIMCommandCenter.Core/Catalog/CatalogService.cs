@@ -21,8 +21,8 @@ namespace BIMCommandCenter.Core.Catalog
     }
 
     /// <summary>
-    /// Loads the tool catalog from whatever the team uses as the source of truth:
-    ///   - .xlsx  : SharePoint Excel synced via OneDrive (teammate's file)
+    /// Loads the tool catalog from whatever the organization uses as the source of truth:
+    ///   - .xlsx  : SharePoint Excel synced via OneDrive (central shared file)
     ///   - .json  : local / network JSON
     ///   - https  : Power Automate HTTP flow or any endpoint returning JSON (array, {value:[]}, {tools:[]}, Graph list items)
     /// Results are normalised to the schema in the spec and cached locally so the UI still works offline.

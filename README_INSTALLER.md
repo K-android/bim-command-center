@@ -2,7 +2,7 @@
 
 ## 📦 What's Included
 
-The standalone setup file **`BIMCommandCenter_Setup_v1.0.0.exe`** (2.7 MB) is ready to distribute to anyone on your team.
+The standalone setup file **`BIMCommandCenter_Setup_v1.0.0.exe`** (2.7 MB) is ready to distribute to users across the company.
 
 ### Supported Revit Versions:
 - **Autodesk Revit 2026** (.NET 8.0)
@@ -14,7 +14,7 @@ The standalone setup file **`BIMCommandCenter_Setup_v1.0.0.exe`** (2.7 MB) is re
 
 ## 🚀 How to Install
 
-### Method 1: For Any User / Teammate (Zero Admin Rights Needed)
+### Method 1: Standard User Installation (Zero Admin Rights Needed)
 1. Double-click **`BIMCommandCenter_Setup_v1.0.0.exe`**.
 2. Select your installed Revit version(s) (or keep all checked).
 3. Click **Next** $\rightarrow$ **Install**.
@@ -35,9 +35,9 @@ To silently uninstall:
 
 ---
 
-## 🔗 Connecting Your Teammate's SharePoint File
+## 🔗 Connecting the Central SharePoint / Network Catalog
 
-When your teammate finishes setting up the SharePoint Excel / List:
+To connect the company SharePoint Excel or List:
 
 1. Open `%AppData%\BIMCommandCenter\config.json` (or edit `config.json` in the install directory).
 2. Point `catalogSource` to the synced SharePoint path:

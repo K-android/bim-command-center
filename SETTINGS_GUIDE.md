@@ -64,7 +64,7 @@ Open `config.json` in Notepad or VS Code:
 
 ## 📋 Common Scenarios & Examples
 
-### Scenario A: Your Teammate Syncs the SharePoint Folder via OneDrive (Most Popular)
+### Scenario A: SharePoint Folder Synced via OneDrive (Most Popular)
 If the SharePoint document library is synced to your computer (via the OneDrive *"Sync"* or *"Add shortcut to OneDrive"* button):
 
 ```json
@@ -89,7 +89,7 @@ If your firm keeps tools on an internal server drive:
 ```
 
 ### Scenario C: Power Automate Webhook or Cloud API
-If your teammate built a cloud API / Power Automate flow that returns JSON:
+If the organization provides a cloud API / Power Automate flow that returns JSON:
 
 ```json
 {
