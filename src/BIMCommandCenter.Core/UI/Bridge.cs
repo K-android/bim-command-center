@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Autodesk.Revit.UI;
 using BIMCommandCenter.Core.Catalog;
@@ -84,8 +85,26 @@ namespace BIMCommandCenter.Core.UI
                     Dictionary<string, object> tool = _s.Catalog.FindTool(toolId)
                         ?? throw new InvalidOperationException("Tool \"" + toolId + "\" is not in the catalog.");
                     Log.Write("Execute " + toolId + " by " + Environment.UserName);
+
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
                     RunResult result = await _s.Dispatcher.InvokeAsync(app => _s.Runner.Run(app, tool));
+                    sw.Stop();
+                    result.DurationSeconds = Math.Round(sw.Elapsed.TotalSeconds, 2);
+
+                    // Record to audit trail
+                    RecordRunAudit(tool, result, payload);
+
                     return result.ToDictionary();
+                }
+
+                case "getRunHistory":
+                {
+                    return GetRunHistory();
+                }
+
+                case "reportIssue":
+                {
+                    return RecordIssue(payload);
                 }
 
                 case "captureViewport":
@@ -159,6 +178,96 @@ namespace BIMCommandCenter.Core.UI
 
                 default:
                     throw new NotSupportedException("Unknown action: " + action);
+            }
+        }
+
+        private static string AuditHistoryPath =>
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BIMCommandCenter", "audit", "run_history.json");
+
+        private static void RecordRunAudit(Dictionary<string, object> tool, RunResult result, Dictionary<string, object> payload)
+        {
+            try
+            {
+                string path = AuditHistoryPath;
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+
+                var history = new List<object>();
+                if (System.IO.File.Exists(path))
+                {
+                    try { history = Json.AsList(Json.Parse(System.IO.File.ReadAllText(path))) ?? history; } catch {}
+                }
+
+                var entry = new Dictionary<string, object>
+                {
+                    ["id"] = result.ExecutionId,
+                    ["toolId"] = tool.Str("toolId"),
+                    ["toolTitle"] = tool.Str("title"),
+                    ["category"] = tool.Str("category"),
+                    ["actionType"] = tool.Str("actionType"),
+                    ["status"] = result.Status,
+                    ["ok"] = result.Ok,
+                    ["message"] = result.Message,
+                    ["changedItems"] = result.ChangedItems,
+                    ["outputs"] = result.Outputs,
+                    ["warnings"] = result.Warnings,
+                    ["errors"] = result.Errors,
+                    ["user"] = Environment.UserName,
+                    ["durationSeconds"] = result.DurationSeconds,
+                    ["timestamp"] = result.ExecutedAt.ToString("o")
+                };
+
+                history.Insert(0, entry);
+                if (history.Count > 100) history = history.Take(100).ToList();
+
+                System.IO.File.WriteAllText(path, Json.Stringify(history));
+            }
+            catch (Exception ex)
+            {
+                Log.Write("RecordRunAudit error: " + ex.Message);
+            }
+        }
+
+        private static List<object> GetRunHistory()
+        {
+            try
+            {
+                string path = AuditHistoryPath;
+                if (System.IO.File.Exists(path))
+                {
+                    return Json.AsList(Json.Parse(System.IO.File.ReadAllText(path))) ?? new List<object>();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("GetRunHistory error: " + ex.Message);
+            }
+            return new List<object>();
+        }
+
+        private static Dictionary<string, object> RecordIssue(Dictionary<string, object> payload)
+        {
+            try
+            {
+                string issuePath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BIMCommandCenter", "audit", "issues.json");
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(issuePath));
+
+                var issues = new List<object>();
+                if (System.IO.File.Exists(issuePath))
+                {
+                    try { issues = Json.AsList(Json.Parse(System.IO.File.ReadAllText(issuePath))) ?? issues; } catch {}
+                }
+
+                payload["id"] = Guid.NewGuid().ToString("N");
+                payload["user"] = Environment.UserName;
+                payload["timestamp"] = DateTime.Now.ToString("o");
+
+                issues.Insert(0, payload);
+                System.IO.File.WriteAllText(issuePath, Json.Stringify(issues));
+                return new Dictionary<string, object> { ["ok"] = true, ["issueId"] = payload["id"] };
+            }
+            catch (Exception ex)
+            {
+                return new Dictionary<string, object> { ["ok"] = false, ["error"] = ex.Message };
             }
         }
 

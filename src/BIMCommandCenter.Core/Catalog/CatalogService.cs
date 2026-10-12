@@ -143,17 +143,28 @@ namespace BIMCommandCenter.Core.Catalog
                     {
                         ["toolId"] = "local-" + Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "-"),
                         ["title"] = friendlyTitle,
+                        ["name"] = friendlyTitle,
                         ["category"] = category,
                         ["description"] = "Tool or shortcut located in your central folder: " + (string.IsNullOrEmpty(relDir) ? fileName : Path.Combine(relDir, fileName)),
+                        ["intendedOutcome"] = "Custom automation tool loaded from central library (" + category + ").",
                         ["keywords"] = new List<string> { baseName.ToLowerInvariant(), friendlyTitle.ToLowerInvariant(), category.ToLowerInvariant() },
+                        ["tags"] = new List<string> { category.ToLowerInvariant(), actionType.ToLowerInvariant() },
                         ["actionType"] = actionType,
                         ["targetPath"] = targetPath,
                         ["executionMode"] = "Player",
-                        ["status"] = "Active",
+                        ["status"] = "Approved",
+                        ["riskLevel"] = "Medium",
+                        ["owningTeam"] = "Firm Library (" + category + ")",
+                        ["author"] = Environment.UserName,
+                        ["safetyLevel"] = "Modifying",
+                        ["affectedData"] = "Modifies active Revit model elements.",
                         ["canAITrigger"] = true,
                         ["version"] = "v1.0 (Local)",
                         ["iconName"] = iconName,
-                        ["revitVersions"] = new List<string>()
+                        ["revitVersions"] = new List<string> { "2023", "2024", "2025", "2026" },
+                        ["packagesRequired"] = "None reported",
+                        ["lastTestedDate"] = "Auto-discovered local tool",
+                        ["parameters"] = new List<Dictionary<string, object>>()
                     };
 
                     tools.Insert(0, autoTool); // Put user's central tools at the top!

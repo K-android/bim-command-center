@@ -14,10 +14,47 @@ namespace BIMCommandCenter.Core.Revit
     public class RunResult
     {
         public bool Ok { get; set; }
+        public string Status { get; set; } = "Completed";
         public string Message { get; set; }
-        public Dictionary<string, object> ToDictionary() => new Dictionary<string, object> { ["ok"] = Ok, ["message"] = Message };
-        public static RunResult Success(string m) => new RunResult { Ok = true, Message = m };
-        public static RunResult Fail(string m) => new RunResult { Ok = false, Message = m };
+        public List<string> ChangedItems { get; set; } = new List<string>();
+        public List<string> Outputs { get; set; } = new List<string>();
+        public List<string> Warnings { get; set; } = new List<string>();
+        public List<string> Errors { get; set; } = new List<string>();
+        public string ExecutionId { get; set; } = Guid.NewGuid().ToString("N");
+        public double DurationSeconds { get; set; }
+        public DateTime ExecutedAt { get; set; } = DateTime.Now;
+
+        public Dictionary<string, object> ToDictionary() => new Dictionary<string, object>
+        {
+            ["ok"] = Ok,
+            ["status"] = Status,
+            ["message"] = Message,
+            ["changedItems"] = ChangedItems ?? new List<string>(),
+            ["outputs"] = Outputs ?? new List<string>(),
+            ["warnings"] = Warnings ?? new List<string>(),
+            ["errors"] = Errors ?? new List<string>(),
+            ["executionId"] = ExecutionId,
+            ["durationSeconds"] = DurationSeconds,
+            ["executedAt"] = ExecutedAt.ToString("o")
+        };
+
+        public static RunResult Success(string m, List<string> changed = null, List<string> outputs = null, List<string> warnings = null) => new RunResult
+        {
+            Ok = true,
+            Status = (warnings != null && warnings.Count > 0) ? "Warning" : "Completed",
+            Message = m,
+            ChangedItems = changed ?? new List<string>(),
+            Outputs = outputs ?? new List<string>(),
+            Warnings = warnings ?? new List<string>()
+        };
+
+        public static RunResult Fail(string m, List<string> errors = null) => new RunResult
+        {
+            Ok = false,
+            Status = "Failed",
+            Message = m,
+            Errors = errors ?? (string.IsNullOrEmpty(m) ? new List<string>() : new List<string> { m })
+        };
     }
 
     /// <summary>

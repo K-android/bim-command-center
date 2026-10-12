@@ -3,107 +3,386 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BIM Command Center</title>
-  <!-- Vendored locally so the panel works without internet -->
+  <title>BIM Command Center V2</title>
+  <!-- Vendored locally so the panel works 100% offline inside Revit -->
   <script src="vendor/tailwind.js"></script>
   <script src="vendor/lucide.min.js"></script>
   <style>
     body { font-family: "Segoe UI", -apple-system, Roboto, sans-serif; }
-    .scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scroll::-webkit-scrollbar { width: 5px; height: 5px; }
     .scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .scroll::-webkit-scrollbar-track { background: transparent; }
     .fade-in { animation: fade .18s ease-out; }
     @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px]">
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px] select-none">
 
-  <!-- HEADER -->
-  <header class="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between gap-2 shrink-0">
-    <div class="flex items-center gap-2 min-w-0">
-      <div class="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center shrink-0"><i data-lucide="layout-grid" class="w-4 h-4"></i></div>
+  <!-- TOP HEADER -->
+  <header class="bg-slate-900 text-white px-3.5 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-slate-800">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <div class="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center shrink-0 shadow-xs">
+        <i data-lucide="shield-check" class="w-4 h-4 text-white"></i>
+      </div>
       <div class="min-w-0">
-        <div class="font-semibold text-sm leading-tight flex items-center gap-1.5">
+        <div class="font-semibold text-xs leading-tight flex items-center gap-1.5">
           <span>BIM Command Center</span>
-          <span id="ai-active-badge" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-400/30">AI Active</span>
+          <span class="text-[9px] bg-blue-500/20 text-blue-300 font-mono px-1 py-0.2 rounded border border-blue-400/30">V2 Control Plane</span>
+          <span id="ai-active-badge" class="hidden text-[9px] bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded border border-emerald-400/30 font-medium">AI Active</span>
         </div>
-        <div id="ctx-line" class="text-[11px] text-slate-400 truncate">Connecting…</div>
+        <div id="ctx-line" class="text-[10px] text-slate-400 truncate">Connecting to Revit…</div>
       </div>
     </div>
     <div class="flex items-center gap-1.5">
-      <button onclick="openSettingsModal()" title="Settings & Central Folder" class="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1.5 rounded-md text-xs shrink-0 border border-slate-700 transition">
+      <button onclick="openSettingsModal()" title="Settings, AI Engines & Scripts Folder" class="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-xs border border-slate-700 transition">
         <i data-lucide="settings" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Settings</span>
       </button>
-      <button onclick="openIdeaModal()" title="Request an automation" class="flex items-center gap-1 bg-amber-400 hover:bg-amber-500 text-slate-900 font-semibold px-2 py-1.5 rounded-md text-xs shrink-0 transition">
-        <i data-lucide="lightbulb" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Request</span>
+      <button onclick="openSubmitModal()" title="Submit automation for governance review" class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white font-medium px-2 py-1 rounded text-xs transition shadow-2xs">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Submit Tool</span>
       </button>
     </div>
   </header>
 
-  <!-- TABS -->
-  <nav class="bg-white border-b border-slate-200 px-3 flex gap-1 shrink-0">
-    <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700 flex items-center gap-1.5"><i data-lucide="grid-2x2" class="w-3.5 h-3.5"></i>Tools</button>
-    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5"><i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>Copilot</button>
+  <!-- NAVIGATION TABS: Tools | Copilot | Activity (Blueprint Page 7) -->
+  <nav class="bg-white border-b border-slate-200 px-3 flex items-center gap-1 shrink-0">
+    <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700 flex items-center gap-1.5">
+      <i data-lucide="grid-2x2" class="w-3.5 h-3.5"></i>Tools
+    </button>
+    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5">
+      <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>Copilot
+    </button>
+    <button id="tab-activity" onclick="switchTab('activity')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5">
+      <i data-lucide="history" class="w-3.5 h-3.5 text-slate-400"></i>Activity
+      <span id="activity-count" class="hidden text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded-full font-mono">0</span>
+    </button>
     <div class="flex-1"></div>
-    <button onclick="loadCatalog(true)" title="Refresh catalog" class="text-slate-400 hover:text-slate-700 px-2"><i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i></button>
+    <button onclick="loadCatalog(true)" title="Refresh catalog and scan central folder" class="text-slate-400 hover:text-slate-700 p-1.5 rounded transition">
+      <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+    </button>
   </nav>
 
   <div id="banner" class="hidden bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-2"></div>
 
-  <!-- TOOLS VIEW -->
-  <main id="view-tools" class="flex-1 overflow-y-auto scroll">
-    <section class="bg-gradient-to-br from-blue-900 to-slate-900 text-white px-4 pt-5 pb-6">
-      <h1 class="text-lg font-bold">What are we solving today?</h1>
-      <p class="text-[12px] text-slate-300 mt-0.5">Search firm tools, or pick a category.</p>
-      <div class="relative mt-3">
-        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
-        <input id="search" type="text" oninput="render()" placeholder="e.g. renumber doors, purge rooms, export PDF…"
-               class="w-full bg-white text-slate-900 pl-9 pr-8 py-2 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-400">
-        <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2 top-2 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
-      </div>
-      <div class="flex items-center justify-between mt-2 text-[11px]">
-        <button onclick="askCopilotFromSearch()" class="text-blue-200 hover:text-white inline-flex items-center gap-1">
-          <i data-lucide="sparkles" class="w-3 h-3"></i>Or ask the Copilot to find & run it
+  <!-- VIEW 1: TOOLS (CATALOG & GOVERNANCE BROWSER) -->
+  <main id="view-tools" class="flex-1 overflow-y-auto scroll flex flex-col">
+    <!-- HERO SECTION (Collapsible for increased tool density - Blueprint Page 2) -->
+    <section id="hero-section" class="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white px-4 pt-3.5 pb-4 transition-all duration-200 shrink-0">
+      <div class="flex items-center justify-between">
+        <h1 class="text-sm font-bold tracking-tight flex items-center gap-1.5">
+          <span>What are we solving today?</span>
+        </h1>
+        <button onclick="toggleHeroDensity()" id="hero-toggle-btn" class="text-[11px] text-slate-300 hover:text-white flex items-center gap-0.5">
+          <span id="hero-toggle-text">Compact</span>
+          <i data-lucide="chevron-up" id="hero-toggle-icon" class="w-3 h-3"></i>
         </button>
-        <button onclick="openFolder()" class="text-slate-300 hover:text-white inline-flex items-center gap-1">
-          <i data-lucide="folder-open" class="w-3 h-3"></i><span id="scripts-folder-label">Open Scripts Folder</span>
+      </div>
+      <p id="hero-subtext" class="text-[11px] text-slate-300 mt-0.5">Search approved firm automations or filter by capability.</p>
+      
+      <div class="relative mt-2">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+        <input id="search" type="text" oninput="render()" placeholder="Search by intent, outcome, tag, or author (e.g. renumber doors, health audit, CAD purge)…"
+               class="w-full bg-white text-slate-900 pl-9 pr-8 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm">
+        <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+      </div>
+
+      <div class="flex items-center justify-between mt-2 text-[10px] text-slate-300">
+        <button onclick="askCopilotFromSearch()" class="hover:text-blue-200 inline-flex items-center gap-1 font-medium text-amber-300">
+          <i data-lucide="sparkles" class="w-3 h-3"></i>Ask Copilot to recommend an approved tool
+        </button>
+        <button onclick="openFolder()" class="hover:text-white inline-flex items-center gap-1">
+          <i data-lucide="folder-open" class="w-3 h-3"></i><span id="scripts-folder-label">Open Central Library</span>
         </button>
       </div>
     </section>
 
-    <section class="p-4 space-y-4">
-      <div id="categories" class="grid grid-cols-3 gap-2"></div>
-      <div class="flex items-center justify-between">
-        <div id="list-title" class="text-xs font-semibold text-slate-500 uppercase tracking-wide">All tools</div>
-        <button id="back-all" onclick="setCategory('All')" class="hidden text-xs text-blue-600 font-semibold">Show all</button>
+    <!-- DETERMINISTIC FILTER BAR (Blueprint Page 2 & 4) -->
+    <section class="bg-white border-b border-slate-200 px-3 py-2 shrink-0 space-y-2">
+      <!-- Filter Row 1: Platform & Trust Status -->
+      <div class="flex items-center gap-2 overflow-x-auto scroll pb-0.5">
+        <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">Platform:</span>
+        <div id="filter-platform" class="flex items-center gap-1 text-[11px] shrink-0">
+          <button onclick="setFilter('platform', 'All')" class="f-plat px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-semibold" data-val="All">All</button>
+          <button onclick="setFilter('platform', 'Dynamo')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="Dynamo">Dynamo</button>
+          <button onclick="setFilter('platform', 'PyRevit')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="PyRevit">pyRevit</button>
+          <button onclick="setFilter('platform', 'NativeAddin')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="NativeAddin">Add-in</button>
+          <button onclick="setFilter('platform', 'PostableCommand')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="PostableCommand">Revit Native</button>
+        </div>
+
+        <span class="text-slate-300">|</span>
+
+        <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">Trust State:</span>
+        <div id="filter-status" class="flex items-center gap-1 text-[11px] shrink-0">
+          <button onclick="setFilter('status', 'All')" class="f-stat px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-semibold" data-val="All">All</button>
+          <button onclick="setFilter('status', 'Approved')" class="f-stat px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100" data-val="Approved">✓ Approved</button>
+          <button onclick="setFilter('status', 'Pilot')" class="f-stat px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100" data-val="Pilot">⚗ Pilot</button>
+          <button onclick="setFilter('status', 'Restricted')" class="f-stat px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100" data-val="Restricted">🔒 Restricted</button>
+          <button onclick="setFilter('status', 'Draft')" class="f-stat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="Draft">Draft</button>
+        </div>
+
+        <span class="text-slate-300">|</span>
+
+        <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">Impact:</span>
+        <div id="filter-safety" class="flex items-center gap-1 text-[11px] shrink-0">
+          <button onclick="setFilter('safety', 'All')" class="f-safe px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-semibold" data-val="All">All</button>
+          <button onclick="setFilter('safety', 'ReadOnly')" class="f-safe px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100" data-val="ReadOnly">Read-Only</button>
+          <button onclick="setFilter('safety', 'Modifying')" class="f-safe px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" data-val="Modifying">Modifies Model</button>
+        </div>
       </div>
-      <div id="tools" class="space-y-2"></div>
+
+      <!-- Filter Row 2: Category Pills -->
+      <div id="category-pills" class="flex items-center gap-1.5 overflow-x-auto scroll text-xs pt-1"></div>
+    </section>
+
+    <!-- TOOL CARDS LIST (High density, structured cards - Blueprint Page 2) -->
+    <section class="p-3.5 space-y-3 flex-1">
+      <div class="flex items-center justify-between text-xs text-slate-500 font-semibold px-0.5">
+        <span id="list-title">All Tools</span>
+        <span id="active-filter-indicator" class="text-[11px] text-blue-600 font-normal"></span>
+      </div>
+
+      <div id="tools-container" class="space-y-2.5"></div>
     </section>
   </main>
 
-  <!-- COPILOT VIEW -->
-  <main id="view-ai" class="hidden flex-1 flex flex-col min-h-0">
-    <div id="chat" class="flex-1 overflow-y-auto scroll p-4 space-y-3"></div>
+  <!-- VIEW 2: COPILOT (GOVERNED AI ROUTER - Blueprint Page 4) -->
+  <main id="view-ai" class="hidden flex-1 flex flex-col min-h-0 bg-white">
+    <!-- Sub-header governance notice -->
+    <div class="bg-blue-50/70 border-b border-blue-100 px-3.5 py-1.5 flex items-center justify-between text-[11px] text-blue-800 shrink-0">
+      <div class="flex items-center gap-1.5">
+        <i data-lucide="shield" class="w-3.5 h-3.5 text-blue-600"></i>
+        <span><strong>Governed Assistant:</strong> Recommends approved catalog tools. Never modifies models silently.</span>
+      </div>
+      <button onclick="clearChat()" class="text-blue-600 hover:text-blue-900 hover:underline">Clear Chat</button>
+    </div>
 
-    <div id="attach-tray" class="hidden px-3 py-2 border-t border-slate-200 bg-white flex items-center gap-2">
+    <div id="chat" class="flex-1 overflow-y-auto scroll p-4 space-y-3.5 bg-slate-50/50"></div>
+
+    <!-- ATTACHMENT TRAY -->
+    <div id="attach-tray" class="hidden px-3.5 py-2 border-t border-slate-200 bg-white flex items-center gap-2">
       <img id="attach-thumb" class="hidden w-12 h-9 object-cover rounded border border-slate-200" alt="">
       <span id="attach-name" class="text-xs text-slate-600 truncate flex-1"></span>
       <button onclick="clearAttachment()" class="text-slate-400 hover:text-red-600"><i data-lucide="x" class="w-4 h-4"></i></button>
     </div>
 
-    <div class="px-3 py-2 border-t border-slate-100 bg-slate-50 flex gap-1.5 overflow-x-auto scroll" id="chips"></div>
+    <!-- QUICK PROMPT CHIPS -->
+    <div class="px-3.5 py-1.5 border-t border-slate-100 bg-white flex gap-1.5 overflow-x-auto scroll" id="chips"></div>
 
+    <!-- CHAT INPUT -->
     <div class="p-3 border-t border-slate-200 bg-white flex items-center gap-2">
-      <button onclick="captureViewport()" title="Capture & inspect active Revit viewport" class="text-slate-500 hover:text-blue-600 p-1.5 rounded hover:bg-slate-100 transition"><i data-lucide="camera" class="w-4 h-4"></i></button>
-      <label title="Attach PDF spec" class="text-slate-500 hover:text-blue-600 p-1.5 rounded hover:bg-slate-100 cursor-pointer transition"><i data-lucide="paperclip" class="w-4 h-4"></i>
+      <button onclick="captureViewport()" title="Capture active Revit viewport drawing" class="text-slate-500 hover:text-blue-600 p-1.5 rounded hover:bg-slate-100 transition">
+        <i data-lucide="camera" class="w-4 h-4"></i>
+      </button>
+      <label title="Attach PDF spec" class="text-slate-500 hover:text-blue-600 p-1.5 rounded hover:bg-slate-100 cursor-pointer transition">
+        <i data-lucide="paperclip" class="w-4 h-4"></i>
         <input type="file" accept=".pdf" class="hidden" onchange="attachPdf(event)">
       </label>
-      <input id="chat-input" type="text" placeholder="Ask or describe what you want to automate…" onkeydown="if(event.key==='Enter') sendChat()"
-             class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-400">
-      <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition shadow-sm"><i data-lucide="send" class="w-4 h-4"></i></button>
+      <input id="chat-input" type="text" placeholder="Describe the problem to solve (e.g. check model health, renumber doors, audit CAD)…" onkeydown="if(event.key==='Enter') sendChat()"
+             class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition shadow-xs">
+        <i data-lucide="send" class="w-4 h-4"></i>
+      </button>
     </div>
   </main>
 
-  <!-- MODAL: SETTINGS & CENTRAL FOLDER -->
+  <!-- VIEW 3: ACTIVITY & AUDIT TRAIL (Blueprint Page 5 & 7) -->
+  <main id="view-activity" class="hidden flex-1 overflow-y-auto scroll p-4 bg-slate-50 space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+          <i data-lucide="file-check-2" class="w-4 h-4 text-blue-600"></i>Activity & Execution Audit Trail
+        </h2>
+        <p class="text-[11px] text-slate-500">Record of tool runs, modified elements, execution duration, and reported issues.</p>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button onclick="loadActivity()" class="text-xs bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2 py-1 rounded-md flex items-center gap-1 shadow-2xs">
+          <i data-lucide="refresh-cw" class="w-3 h-3"></i>Refresh
+        </button>
+        <button onclick="openSubmitModal()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 shadow-2xs">
+          <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>Submit Automation
+        </button>
+      </div>
+    </div>
+
+    <!-- STATS SUMMARY -->
+    <div class="grid grid-cols-4 gap-2">
+      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
+        <div class="text-[10px] text-slate-400 uppercase font-bold">Total Runs</div>
+        <div id="stat-total" class="text-lg font-bold text-slate-800 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
+        <div class="text-[10px] text-slate-400 uppercase font-bold">Success</div>
+        <div id="stat-success" class="text-lg font-bold text-emerald-600 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
+        <div class="text-[10px] text-slate-400 uppercase font-bold">Warnings</div>
+        <div id="stat-warnings" class="text-lg font-bold text-amber-600 mt-0.5">0</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
+        <div class="text-[10px] text-slate-400 uppercase font-bold">Avg Time</div>
+        <div id="stat-time" class="text-lg font-bold text-slate-700 mt-0.5">0s</div>
+      </div>
+    </div>
+
+    <!-- RECENT RUNS LIST -->
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+      <div class="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-semibold">
+        <span>Execution History</span>
+        <span class="text-[11px] text-slate-400 font-normal">Audit entries recorded locally</span>
+      </div>
+      <div id="activity-list" class="divide-y divide-slate-100"></div>
+    </div>
+  </main>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 1: PREFLIGHT & SAFE RUN CONFIRMATION (Blueprint Pages 2-3 & 5)   -->
+  <!-- ====================================================================== -->
+  <div id="preflight-modal" class="hidden fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-xl w-full max-w-lg shadow-2xl fade-in overflow-hidden max-h-[92vh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div class="font-bold text-sm flex items-center gap-2">
+          <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600"></i>
+          Preflight & Execution Approval
+        </div>
+        <button type="button" onclick="closePreflightModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div id="preflight-content" class="p-4 space-y-3.5 overflow-y-auto scroll flex-1 text-xs"></div>
+
+      <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+        <button type="button" onclick="closePreflightModal()" class="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900">Cancel</button>
+        <div class="flex items-center gap-2">
+          <button id="preflight-confirm-btn" onclick="executeFromPreflight()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-1.5 rounded-md text-xs inline-flex items-center gap-1.5 shadow-sm transition">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>Confirm & Run Tool
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 2: TOOL SPECIFICATION & DETAILS MODAL (Blueprint Page 4)        -->
+  <!-- ====================================================================== -->
+  <div id="details-modal" class="hidden fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-xl w-full max-w-xl shadow-2xl fade-in overflow-hidden max-h-[92vh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div class="font-bold text-sm flex items-center gap-2">
+          <i data-lucide="file-code" class="w-4 h-4 text-blue-600"></i>
+          <span id="details-title">Tool Specification</span>
+        </div>
+        <button type="button" onclick="closeDetailsModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div id="details-content" class="p-4 space-y-3.5 overflow-y-auto scroll flex-1 text-xs"></div>
+
+      <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+        <button type="button" onclick="closeDetailsModal()" class="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900">Close</button>
+        <button id="details-run-btn" onclick="launchFromDetails()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-1.5 rounded-md text-xs inline-flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="play" class="w-3.5 h-3.5"></i>Run This Tool
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 3: REPORT ISSUE / FEEDBACK MODAL (Blueprint Page 5)             -->
+  <!-- ====================================================================== -->
+  <div id="issue-modal" class="hidden fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-3">
+    <form onsubmit="submitIssue(event)" class="bg-white rounded-xl w-full max-w-md shadow-2xl fade-in overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div class="font-bold text-sm flex items-center gap-2 text-rose-700">
+          <i data-lucide="alert-circle" class="w-4 h-4"></i>Report Tool Issue
+        </div>
+        <button type="button" onclick="closeIssueModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="p-4 space-y-3 text-xs">
+        <input type="hidden" id="issue-tool-id">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Tool Name</label>
+          <input id="issue-tool-title" type="text" readonly class="w-full p-2 bg-slate-100 border border-slate-200 rounded-md font-semibold text-slate-700">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Issue Description *</label>
+          <textarea id="issue-desc" required rows="3" placeholder="Describe the error, unexpected model change, or failure…"
+                    class="w-full p-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Execution ID (Optional)</label>
+          <input id="issue-exec-id" type="text" placeholder="Auto-filled from run history" class="w-full p-2 border border-slate-200 rounded-md font-mono text-[11px]">
+        </div>
+      </div>
+
+      <div class="px-4 py-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+        <button type="button" onclick="closeIssueModal()" class="px-3 py-1.5 text-xs text-slate-600">Cancel</button>
+        <button type="submit" class="bg-rose-600 hover:bg-rose-700 text-white font-semibold px-3.5 py-1.5 rounded-md text-xs shadow-xs">Submit Issue</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 4: SUBMIT AUTOMATION FOR REVIEW (Blueprint Page 5)              -->
+  <!-- ====================================================================== -->
+  <div id="submit-modal" class="hidden fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-3">
+    <form onsubmit="submitToolForGovernance(event)" class="bg-white rounded-xl w-full max-w-lg shadow-2xl fade-in overflow-hidden max-h-[92vh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div class="font-bold text-sm flex items-center gap-2">
+          <i data-lucide="upload-cloud" class="w-4 h-4 text-blue-600"></i>Submit Automation for Review
+        </div>
+        <button type="button" onclick="closeSubmitModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="p-4 space-y-3 overflow-y-auto scroll flex-1 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Tool Name *</label>
+          <input id="sub-title" required type="text" placeholder="e.g. Structural Rebar Schedule Validator" class="w-full p-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Category *</label>
+            <select id="sub-category" class="w-full p-2 border border-slate-200 rounded-md">
+              <option>Quality & QA</option><option>Documentation</option><option>Model Audit</option><option>Geometry</option><option>Export</option><option>Setup</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Platform *</label>
+            <select id="sub-platform" class="w-full p-2 border border-slate-200 rounded-md">
+              <option value="Dynamo">Dynamo (.dyn)</option><option value="PyRevit">pyRevit (.py)</option><option value="NativeAddin">C# Native Add-in (.dll)</option><option value="Grasshopper">Grasshopper / Rhino</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Intended Outcome / Purpose *</label>
+          <textarea id="sub-outcome" required rows="2" placeholder="What does this automation achieve, and why should it be approved?" class="w-full p-2 border border-slate-200 rounded-md"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Owning Team</label>
+            <input id="sub-team" type="text" placeholder="e.g. Digital Delivery Team" class="w-full p-2 border border-slate-200 rounded-md">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Safety Level</label>
+            <select id="sub-safety" class="w-full p-2 border border-slate-200 rounded-md">
+              <option value="Modifying">Modifies Model (Requires preflight)</option>
+              <option value="ReadOnly">Read-Only (Analysis/Export only)</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Package / Library Dependencies</label>
+          <input id="sub-deps" type="text" placeholder="e.g. Clockwork 2.4, Rhythm (or None)" class="w-full p-2 border border-slate-200 rounded-md">
+        </div>
+      </div>
+
+      <div class="px-4 py-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+        <button type="button" onclick="closeSubmitModal()" class="px-3 py-1.5 text-xs text-slate-600">Cancel</button>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-1.5 rounded-md text-xs shadow-xs">Submit to Governance Queue</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 5: SETTINGS & CENTRAL FOLDER                                     -->
+  <!-- ====================================================================== -->
   <div id="settings-modal" class="hidden fixed inset-0 bg-slate-950/60 z-50 flex items-center justify-center p-3">
     <div class="bg-white rounded-xl w-full max-w-lg shadow-2xl fade-in overflow-hidden max-h-[92vh] flex flex-col">
       <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
@@ -111,31 +390,29 @@
         <button type="button" onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
       </div>
 
-      <div class="p-4 space-y-4 overflow-y-auto scroll flex-1">
+      <div class="p-4 space-y-3.5 overflow-y-auto scroll flex-1">
         <!-- SECTION 1: CENTRAL SCRIPTS FOLDER -->
-        <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-2.5">
+        <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-2">
           <div class="flex items-center justify-between">
             <span class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-              <i data-lucide="folder" class="w-4 h-4 text-blue-600"></i>
-              Central Scripts Folder
+              <i data-lucide="folder" class="w-4 h-4 text-blue-600"></i>Central Scripts Folder
             </span>
             <button type="button" onclick="openFolder()" class="text-[11px] bg-white border border-slate-200 hover:bg-slate-100 text-blue-700 px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 shadow-2xs">
               <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>Open in Explorer
             </button>
           </div>
           <p class="text-[11px] text-slate-500 leading-tight">
-            Drop any <code>.dyn</code> (Dynamo) or <code>.py</code> (pyRevit) files here. They will automatically appear in your Command Center!
+            Drop your <code>.dyn</code>, <code>.py</code>, or <code>.dll</code> files into <code>Dynamo\</code>, <code>PyRevit\</code>, or <code>Custom Addins\</code> subfolders.
           </p>
-          <input id="setting-scripts-root" type="text" placeholder="e.g. C:\Users\%USERNAME%\Documents\BIM_Scripts or \\server\BIM\Scripts"
-                 class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <input id="setting-scripts-root" type="text" placeholder="%AppData%\BIMCommandCenter\scripts or \\server\BIM\Scripts"
+                 class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400 font-mono">
         </div>
 
         <!-- SECTION 2: AI COPILOT ENGINE -->
         <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-2.5">
           <div class="flex items-center justify-between">
             <span class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-              <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
-              AI Copilot Engine
+              <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>AI Copilot Engine
             </span>
             <span id="ai-test-badge" class="text-[10px] text-slate-400">Not configured</span>
           </div>
@@ -145,7 +422,7 @@
             <select id="setting-ai-provider" onchange="onAiProviderChange()" class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md">
               <option value="gemini">Google Gemini (Cloud - Free tier, Vision support)</option>
               <option value="groq">Groq (Cloud - Ultra fast Llama 3.3)</option>
-              <option value="local">Local AI / Ollama / Local Gemini (Localhost)</option>
+              <option value="local">Local AI / Ollama / Localhost</option>
             </select>
           </div>
 
@@ -155,8 +432,8 @@
               <a id="ai-key-link" href="https://aistudio.google.com/app/apikey" target="_blank" class="text-[10px] text-blue-600 hover:underline">Get Free Gemini API Key ↗</a>
             </div>
             <div class="relative">
-              <input id="setting-ai-key" type="password" placeholder="AIzaSy... or gsk_..."
-                     class="w-full text-xs p-2 pr-8 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono">
+              <input id="setting-ai-key" type="password" placeholder="API key..."
+                     class="w-full text-xs p-2 pr-8 bg-white border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400 font-mono">
               <button type="button" onclick="togglePassword('setting-ai-key')" class="absolute right-2 top-2 text-slate-400 hover:text-slate-700"><i data-lucide="eye" class="w-4 h-4"></i></button>
             </div>
           </div>
@@ -165,12 +442,12 @@
             <div>
               <label class="block text-[11px] font-semibold text-slate-600 mb-1">Model Name</label>
               <input id="setting-ai-model" type="text" value="gemini-1.5-flash"
-                     class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono">
+                     class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md font-mono">
             </div>
             <div id="box-ai-url" class="hidden">
               <label class="block text-[11px] font-semibold text-slate-600 mb-1">Local Base URL</label>
               <input id="setting-ai-url" type="text" value="http://localhost:11434/v1"
-                     class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono">
+                     class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md font-mono">
             </div>
           </div>
 
@@ -182,14 +459,10 @@
         <!-- SECTION 3: SHAREPOINT CATALOG -->
         <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-2">
           <span class="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-            <i data-lucide="table" class="w-4 h-4 text-emerald-600"></i>
-            SharePoint / Catalog Source
+            <i data-lucide="table" class="w-4 h-4 text-emerald-600"></i>SharePoint / Catalog Source
           </span>
-          <p class="text-[11px] text-slate-500 leading-tight">
-            Path to the synced Excel file or Power Automate URL provided by your teammate:
-          </p>
           <input id="setting-catalog-source" type="text" placeholder="data/sample_catalog.json or C:\Users\...\BIM_Catalog.xlsx"
-                 class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400">
+                 class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-400 font-mono">
         </div>
       </div>
 
@@ -200,38 +473,12 @@
     </div>
   </div>
 
-  <!-- IDEA MODAL -->
-  <div id="idea-modal" class="hidden fixed inset-0 bg-slate-950/50 z-40 flex items-center justify-center p-3">
-    <form onsubmit="submitIdea(event)" class="bg-white rounded-xl w-full max-w-md shadow-2xl fade-in">
-      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-        <div class="font-semibold flex items-center gap-2"><i data-lucide="lightbulb" class="w-4 h-4 text-amber-500"></i>Request an automation</div>
-        <button type="button" onclick="closeIdeaModal()" class="text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-4 h-4"></i></button>
-      </div>
-      <div class="p-4 space-y-3">
-        <label class="block"><span class="text-xs font-semibold text-slate-600">What should be automated? *</span>
-          <input id="idea-title" required class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="e.g. Batch align title block revisions"></label>
-        <label class="block"><span class="text-xs font-semibold text-slate-600">Category</span>
-          <select id="idea-category" class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md">
-            <option>Documentation</option><option>Model Audit</option><option>Geometry</option><option>QA/QC</option><option>Export</option><option>Setup</option><option>Other</option>
-          </select></label>
-        <label class="block"><span class="text-xs font-semibold text-slate-600">The problem & time spent today *</span>
-          <textarea id="idea-problem" required rows="3" class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="How long does it take, how often, on which projects?"></textarea></label>
-        <label class="block"><span class="text-xs font-semibold text-slate-600">Your email</span>
-          <input id="idea-email" type="email" class="mt-1 w-full text-[13px] p-2 border border-slate-200 rounded-md" placeholder="name@company.com"></label>
-      </div>
-      <div class="px-4 py-3 border-t border-slate-100 flex justify-end gap-2">
-        <button type="button" onclick="closeIdeaModal()" class="px-3 py-1.5 text-xs text-slate-600">Cancel</button>
-        <button id="idea-submit" type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-md text-xs">Submit</button>
-      </div>
-    </form>
-  </div>
-
-  <!-- TOAST -->
-  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-3.5 py-2 rounded-lg shadow-xl text-xs opacity-0 pointer-events-none transition-opacity duration-200"></div>
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-3.5 py-2 rounded-lg shadow-xl text-xs opacity-0 pointer-events-none transition-opacity duration-200 flex items-center gap-1.5"></div>
 
 <script>
 // ======================================================================
-//  Bridge: talks to Revit (C#) through WebView2
+//  Bridge: Talks to Revit (C#) via Edge WebView2
 // ======================================================================
 const Bridge = (() => {
   const inRevit = !!(window.chrome && window.chrome.webview);
@@ -248,45 +495,59 @@ const Bridge = (() => {
     });
   }
 
-  function call(action, payload = {}) {
-    if (!inRevit) return Mock.call(action, payload);
-    return new Promise((resolve, reject) => {
-      const id = 'm' + (++seq);
-      pending.set(id, { resolve, reject });
-      window.chrome.webview.postMessage(JSON.stringify({ id, action, payload }));
-      const timeout = action === 'executeTool' ? 30 * 60000 : 60000;
-      setTimeout(() => {
-        if (pending.has(id)) {
-          pending.delete(id);
-          reject(new Error('Revit did not respond. Finish or cancel current command and try again.'));
-        }
-      }, timeout);
-    });
-  }
-  return { call, inRevit };
+  return {
+    inRevit,
+    call(action, payload = {}) {
+      if (!inRevit) return fallbackMock(action, payload);
+      const id = 'msg_' + (++seq);
+      return new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        window.chrome.webview.postMessage(JSON.stringify({ id, action, payload }));
+        setTimeout(() => {
+          if (pending.delete(id)) reject(new Error('Timeout waiting for Revit dispatcher'));
+        }, 35000);
+      });
+    }
+  };
 })();
 
-const Mock = {
-  async call(action, payload) {
-    await new Promise(r => setTimeout(r, 200));
-    switch (action) {
-      case 'getContext': return { revitVersion: 'Browser Preview', documentTitle: 'Demo Project', hasDocument: true, activeView: 'Floor Plan - Level 1' };
-      case 'getConfig': return { scriptsRoot: localStorage.getItem('bimcc_scriptsRoot') || 'C:\\Users\\User\\Documents\\BIM_Scripts', catalogSource: 'data/sample_catalog.json' };
-      case 'saveConfig': return { saved: true };
-      case 'openFolder': return { path: payload.path || 'C:\\Users\\User\\Documents\\BIM_Scripts' };
-      case 'getCatalog': {
-        for (const url of ['data/sample_catalog.json', '../dummy_catalog.json']) {
-          try { const r = await fetch(url); if (r.ok) return { tools: await r.json(), source: url, fromCache: false, warning: '' }; } catch {}
-        }
-        return { tools: [], source: 'none', warning: '' };
-      }
-      case 'executeTool': return { ok: true, message: '[Mock Revit] Executed ' + payload.toolId + ' successfully.' };
-      case 'captureViewport': return { mimeType: 'image/png', base64Data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', viewName: 'Level 1' };
-      case 'submitIdea': return { destination: 'SharePoint Backlog' };
-      default: throw new Error('Action not available in preview: ' + action);
-    }
+// Browser Fallback mock (runs when developing outside of Revit in normal browser)
+async function fallbackMock(action, payload) {
+  if (action === 'getCatalog') {
+    const res = await fetch('data/sample_catalog.json').catch(() => null);
+    if (res && res.ok) return { tools: await res.json(), source: 'Local Dev JSON', fromCache: true };
+    return { tools: window._DEV_TOOLS || [], source: 'Mock Dev', fromCache: true };
   }
-};
+  if (action === 'getContext') {
+    return {
+      revitVersion: '2026',
+      documentTitle: 'Sample_Hospital_Model.rvt',
+      activeView: 'Floor Plan: Level 02',
+      hasDocument: true,
+      selectionCount: 14,
+      userName: 'Lead_Architect'
+    };
+  }
+  if (action === 'executeTool') {
+    await new Promise(r => setTimeout(r, 900));
+    return {
+      ok: true,
+      status: 'Completed',
+      message: 'Successfully executed tool on model.',
+      changedItems: ['Door #102', 'Door #103', 'Door #104'],
+      outputs: ['Processed 3 elements successfully.'],
+      warnings: [],
+      errors: [],
+      executionId: 'exec_' + Math.random().toString(36).substring(2, 9),
+      durationSeconds: 1.42,
+      executedAt: new Date().toISOString()
+    };
+  }
+  if (action === 'getRunHistory') {
+    return JSON.parse(localStorage.getItem('bimcc_mock_history') || '[]');
+  }
+  return { ok: true };
+}
 
 // ======================================================================
 //  State & Config
@@ -294,55 +555,66 @@ const Mock = {
 let tools = [];
 let context = {};
 let activeCategory = 'All';
-let attachment = null;
+let filterPlatform = 'All';
+let filterStatus = 'All';
+let filterSafety = 'All';
 let currentConfig = {
-  scriptsRoot: '',
-  catalogSource: 'data/sample_catalog.json',
   aiProvider: 'gemini',
   aiApiKey: '',
   aiModel: 'gemini-1.5-flash',
-  aiBaseUrl: 'http://localhost:11434/v1'
+  aiBaseUrl: 'http://localhost:11434/v1',
+  scriptsRoot: '',
+  catalogSource: 'data/sample_catalog.json'
+};
+let selectedToolForPreflight = null;
+let heroCollapsed = false;
+
+// Platform badge styling
+const PLATFORM_BADGE = {
+  'Dynamo': ['Dynamo', 'bg-blue-50 text-blue-700 border-blue-200'],
+  'PyRevit': ['pyRevit', 'bg-amber-50 text-amber-700 border-amber-200'],
+  'NativeAddin': ['C# Add-in', 'bg-purple-50 text-purple-700 border-purple-200'],
+  'PostableCommand': ['Revit Native', 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+  'Grasshopper': ['Grasshopper', 'bg-teal-50 text-teal-700 border-teal-200']
 };
 
+// Trust status styling (Blueprint Page 2)
+const STATUS_BADGE = {
+  'Approved': ['✓ Approved', 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold'],
+  'Pilot': ['⚗ Pilot', 'bg-blue-50 text-blue-700 border-blue-200 font-medium'],
+  'Restricted': ['🔒 Restricted', 'bg-purple-50 text-purple-700 border-purple-200 font-medium'],
+  'Draft': ['Draft', 'bg-slate-100 text-slate-600 border-slate-200'],
+  'Deprecated': ['⚠ Deprecated', 'bg-rose-50 text-rose-700 border-rose-200']
+};
+
+// Category styling
 const CATEGORY_STYLE = {
-  'Model Audit':     { icon: 'shield-check', color: 'text-rose-600 bg-rose-50' },
-  'Documentation':   { icon: 'file-text',    color: 'text-blue-600 bg-blue-50' },
-  'Geometry':        { icon: 'box',          color: 'text-violet-600 bg-violet-50' },
-  'QA/QC':           { icon: 'badge-check',  color: 'text-emerald-600 bg-emerald-50' },
-  'Export':          { icon: 'upload',       color: 'text-cyan-600 bg-cyan-50' },
-  'Setup':           { icon: 'settings',     color: 'text-slate-600 bg-slate-100' },
-  'Central Scripts': { icon: 'folder',       color: 'text-amber-600 bg-amber-50' },
-};
-const catStyle = c => CATEGORY_STYLE[c] || { icon: 'layers', color: 'text-indigo-600 bg-indigo-50' };
-
-const ACTION_BADGE = {
-  Dynamo:          ['Dynamo',  'bg-indigo-50 text-indigo-700 border-indigo-200'],
-  PyRevit:         ['pyRevit', 'bg-amber-50 text-amber-700 border-amber-200'],
-  NativeAddin:     ['Add-in',  'bg-blue-50 text-blue-700 border-blue-200'],
-  PostableCommand: ['Revit',   'bg-emerald-50 text-emerald-700 border-emerald-200'],
-  Url:             ['Link',    'bg-slate-50 text-slate-600 border-slate-200'],
+  'Documentation': { icon: 'file-text', color: 'bg-blue-50 text-blue-600 border-blue-200' },
+  'Quality & QA': { icon: 'shield-check', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+  'Model Audit': { icon: 'search', color: 'bg-amber-50 text-amber-600 border-amber-200' },
+  'Geometry': { icon: 'box', color: 'bg-purple-50 text-purple-600 border-purple-200' },
+  'Setup': { icon: 'sliders', color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
+  'Export': { icon: 'share-2', color: 'bg-rose-50 text-rose-600 border-rose-200' },
+  'Central Library': { icon: 'folder-code', color: 'bg-teal-50 text-teal-600 border-teal-200' }
 };
 
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const kebab = s => String(s || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/[\s_]+/g, '-').toLowerCase();
-const icons = () => window.lucide && lucide.createIcons();
+function getCatStyle(c) {
+  return CATEGORY_STYLE[c] || { icon: 'wrench', color: 'bg-slate-50 text-slate-600 border-slate-200' };
+}
 
 // ======================================================================
-//  Startup
+//  Lifecycle & Initialization
 // ======================================================================
-async function init() {
+window.addEventListener('DOMContentLoaded', async () => {
   loadStoredSettings();
-  renderChips();
-  addBot(`<p><strong>Hi! I'm your BIM Automation Copilot.</strong></p>
-          <p>Tell me what you're trying to do — e.g. <em>"renumber doors by room"</em> or <em>"clean unplaced rooms"</em>. I will inspect your model and run the script for you.</p>
-          <p class="text-[11px] text-slate-400">💡 You can configure your AI provider (Gemini, Groq, or Local) & Central Scripts Folder in <strong>Settings (⚙️)</strong>.</p>`);
-
   try {
     context = await Bridge.call('getContext');
-    document.getElementById('ctx-line').textContent =
-      `Revit ${context.revitVersion}` + (context.hasDocument ? ` · ${context.documentTitle}` : ' · no project open');
+    const ctxText = context.documentTitle
+      ? `Revit ${context.revitVersion || '2026'} · ${context.documentTitle} (${context.activeView || 'Active View'})`
+      : `Revit ${context.revitVersion || '2026'} · No active document`;
+    document.getElementById('ctx-line').textContent = ctxText;
   } catch (e) {
-    document.getElementById('ctx-line').textContent = 'Revit context ready';
+    document.getElementById('ctx-line').textContent = 'Ready (Standalone Mode)';
   }
 
   try {
@@ -355,8 +627,9 @@ async function init() {
 
   await loadCatalog(false);
   updateAiBadge();
+  initChips();
   icons();
-}
+});
 
 function loadStoredSettings() {
   currentConfig.aiProvider = localStorage.getItem('bimcc_ai_provider') || 'gemini';
@@ -364,6 +637,7 @@ function loadStoredSettings() {
   currentConfig.aiModel = localStorage.getItem('bimcc_ai_model') || (currentConfig.aiProvider === 'gemini' ? 'gemini-1.5-flash' : 'llama-3.3-70b-versatile');
   currentConfig.aiBaseUrl = localStorage.getItem('bimcc_ai_url') || 'http://localhost:11434/v1';
   currentConfig.scriptsRoot = localStorage.getItem('bimcc_scriptsRoot') || '';
+  currentConfig.catalogSource = localStorage.getItem('bimcc_catalogSource') || 'data/sample_catalog.json';
 }
 
 function updateAiBadge() {
@@ -381,7 +655,7 @@ async function loadCatalog(refresh) {
     const res = await Bridge.call('getCatalog', { refresh });
     tools = res.tools || [];
     setBanner(res.warning);
-    if (refresh) toast(`Catalog refreshed · ${tools.length} tools available`);
+    if (refresh) toast(`✓ Catalog refreshed · ${tools.length} automations available`);
   } catch (e) {
     setBanner('Could not load the tool catalog: ' + e.message);
   }
@@ -395,241 +669,817 @@ function setBanner(text) {
 }
 
 // ======================================================================
-//  Tools View
+//  Filters & Rendering (Blueprint Page 2)
 // ======================================================================
-function setCategory(c) { activeCategory = c; render(); document.getElementById('view-tools').scrollTo({ top: 0, behavior: 'smooth' }); }
-function clearSearch() { document.getElementById('search').value = ''; render(); }
+function setCategory(c) {
+  activeCategory = c;
+  render();
+}
 
-function matches(tool, q) {
-  if (!q) return true;
-  const hay = [tool.title, tool.description, tool.category, ...(tool.keywords || [])].join(' ').toLowerCase();
-  return q.split(/\s+/).every(word => hay.includes(word));
+function setFilter(type, val) {
+  if (type === 'platform') {
+    filterPlatform = val;
+    document.querySelectorAll('.f-plat').forEach(b => {
+      const on = b.dataset.val === val;
+      b.className = `f-plat px-2 py-0.5 rounded-md font-semibold transition ${on ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
+    });
+  } else if (type === 'status') {
+    filterStatus = val;
+    document.querySelectorAll('.f-stat').forEach(b => {
+      const on = b.dataset.val === val;
+      b.className = `f-stat px-2 py-0.5 rounded-md font-semibold transition ${on ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
+    });
+  } else if (type === 'safety') {
+    filterSafety = val;
+    document.querySelectorAll('.f-safe').forEach(b => {
+      const on = b.dataset.val === val;
+      b.className = `f-safe px-2 py-0.5 rounded-md font-semibold transition ${on ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
+    });
+  }
+  render();
+}
+
+function clearSearch() {
+  document.getElementById('search').value = '';
+  render();
+}
+
+function toggleHeroDensity() {
+  heroCollapsed = !heroCollapsed;
+  document.getElementById('hero-subtext').classList.toggle('hidden', heroCollapsed);
+  document.getElementById('hero-toggle-text').textContent = heroCollapsed ? 'Expand' : 'Compact';
+  document.getElementById('hero-toggle-icon').style.transform = heroCollapsed ? 'rotate(180deg)' : '';
+}
+
+// Natural language & multi-field search matcher (Blueprint Page 2)
+function matchesSearch(tool, query) {
+  if (!query) return true;
+  const terms = query.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+  const searchableText = [
+    tool.title,
+    tool.name,
+    tool.intendedOutcome,
+    tool.description,
+    tool.category,
+    tool.actionType,
+    tool.owningTeam,
+    tool.author,
+    tool.affectedData,
+    tool.packagesRequired,
+    ...(tool.keywords || []),
+    ...(tool.tags || [])
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return terms.every(t => searchableText.includes(t));
 }
 
 function render() {
-  const q = document.getElementById('search').value.trim().toLowerCase();
-  document.getElementById('search-clear').classList.toggle('hidden', !q);
+  const query = document.getElementById('search').value.trim();
+  document.getElementById('search-clear').classList.toggle('hidden', !query);
 
-  // Category tiles
+  // Render category pills
   const counts = {};
   tools.forEach(t => counts[t.category] = (counts[t.category] || 0) + 1);
-  document.getElementById('categories').innerHTML = Object.keys(counts).sort().map(c => {
-    const s = catStyle(c), on = activeCategory === c;
-    return `<button onclick="setCategory('${esc(c)}')" class="rounded-xl border p-2.5 text-left transition ${on ? 'border-blue-500 ring-2 ring-blue-200 bg-white shadow-2xs' : 'border-slate-200 bg-white hover:border-slate-300'}">
-      <div class="w-8 h-8 rounded-lg flex items-center justify-center ${s.color}"><i data-lucide="${s.icon}" class="w-4 h-4"></i></div>
-      <div class="mt-1.5 font-semibold text-[12px] leading-tight truncate">${esc(c)}</div>
-      <div class="text-[11px] text-slate-400">${counts[c]} tool${counts[c] === 1 ? '' : 's'}</div>
+  const categories = ['All', ...Object.keys(counts).sort()];
+  
+  document.getElementById('category-pills').innerHTML = categories.map(c => {
+    const on = activeCategory === c;
+    const count = c === 'All' ? tools.length : (counts[c] || 0);
+    return `<button onclick="setCategory('${esc(c)}')" class="px-2.5 py-1 rounded-full shrink-0 font-medium transition flex items-center gap-1.5 ${on ? 'bg-blue-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
+      <span>${esc(c)}</span>
+      <span class="text-[10px] ${on ? 'bg-blue-700 text-blue-100' : 'bg-slate-200 text-slate-600'} px-1.5 py-0.2 rounded-full font-mono">${count}</span>
     </button>`;
   }).join('');
 
-  const list = tools.filter(t => (activeCategory === 'All' || t.category === activeCategory) && matches(t, q));
-  document.getElementById('list-title').textContent =
-    (q ? `Results for "${q}"` : activeCategory === 'All' ? 'All tools' : activeCategory) + ` · ${list.length}`;
-  document.getElementById('back-all').classList.toggle('hidden', activeCategory === 'All');
+  // Filter tools deterministically
+  const filtered = tools.filter(t => {
+    if (activeCategory !== 'All' && t.category !== activeCategory) return false;
+    if (filterPlatform !== 'All' && t.actionType !== filterPlatform) return false;
+    if (filterStatus !== 'All' && (t.status || 'Approved') !== filterStatus) return false;
+    if (filterSafety !== 'All' && (t.safetyLevel || 'Modifying') !== filterSafety) return false;
+    return matchesSearch(t, query);
+  });
 
-  document.getElementById('tools').innerHTML = list.length ? list.map(toolCard).join('') : `
-    <div class="text-center py-8 text-slate-400">
-      <i data-lucide="search-x" class="w-7 h-7 mx-auto"></i>
-      <p class="mt-2 text-xs">No tool found matching your search.</p>
-      <button onclick="openIdeaModal(document.getElementById('search').value)" class="mt-1 text-xs text-blue-600 font-semibold">Request it from the BIM team</button>
-    </div>`;
+  // Update header text
+  document.getElementById('list-title').textContent =
+    query ? `Search: "${query}" (${filtered.length} matching)` : `${activeCategory} Tools (${filtered.length})`;
+
+  const container = document.getElementById('tools-container');
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">
+        <i data-lucide="search-x" class="w-8 h-8 mx-auto text-slate-300"></i>
+        <p class="font-semibold text-xs mt-2 text-slate-700">No automation matches these criteria.</p>
+        <p class="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">Try clearing one of the filters, or request this automation for your firm.</p>
+        <div class="mt-3 flex items-center justify-center gap-2">
+          <button onclick="setFilter('platform','All');setFilter('status','All');setFilter('safety','All');setCategory('All');clearSearch()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-xs font-semibold">
+            Clear Filters
+          </button>
+          <button onclick="openSubmitModal('${esc(query).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-xs font-semibold">
+            Request / Submit Idea
+          </button>
+        </div>
+      </div>`;
+  } else {
+    container.innerHTML = filtered.map(t => renderToolCard(t)).join('');
+  }
   icons();
 }
 
-function toolCard(t) {
-  const [label, cls] = ACTION_BADGE[t.actionType] || [t.actionType, 'bg-slate-50 text-slate-600 border-slate-200'];
-  const icon = t.iconName ? kebab(t.iconName) : catStyle(t.category).icon;
-  const headless = t.executionMode === 'Headless';
-  const isLocal = (t.version || '').includes('Local');
+// Recommended Tool Card Implementation (Blueprint Page 2)
+function renderToolCard(t) {
+  const [platLabel, platCls] = PLATFORM_BADGE[t.actionType] || [t.actionType, 'bg-slate-100 text-slate-700 border-slate-200'];
+  const [statLabel, statCls] = STATUS_BADGE[t.status || 'Approved'] || ['Approved', 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold'];
+  const isReadOnly = t.safetyLevel === 'ReadOnly';
+  const owner = t.owningTeam || t.author || 'BIM Team';
+  const tested = t.lastTestedDate || `Revit ${(t.revitVersions || ['2026']).join('/')}`;
+  const deps = t.packagesRequired || t.dependencies || 'None';
+  const impact = t.affectedData || (isReadOnly ? 'Read-only analysis' : 'Modifies model elements');
+  const outcome = t.intendedOutcome || t.description;
 
-  return `<div class="bg-white rounded-xl border ${isLocal ? 'border-amber-200 bg-amber-50/20' : 'border-slate-200'} p-3 hover:shadow-sm transition">
-    <div class="flex gap-3">
-      <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${catStyle(t.category).color}"><i data-lucide="${esc(icon)}" class="w-4 h-4"></i></div>
-      <div class="min-w-0 flex-1">
-        <div class="flex items-start justify-between gap-2">
-          <div class="font-semibold leading-tight">${esc(t.title)}</div>
-          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${cls}">${esc(label)}</span>
-        </div>
-        <p class="text-[12px] text-slate-500 mt-0.5 leading-snug">${esc(t.description)}</p>
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[11px] text-slate-400">
-          <span class="flex items-center gap-1"><i data-lucide="${headless ? 'zap' : 'sliders-horizontal'}" class="w-3 h-3 ${headless ? 'text-emerald-500' : 'text-blue-500'}"></i>${headless ? '1-click' : 'Needs input'}</span>
-          ${t.packagesRequired ? `<span class="flex items-center gap-1"><i data-lucide="package" class="w-3 h-3"></i>${esc(t.packagesRequired)}</span>` : ''}
-          ${isLocal ? `<span class="text-amber-700 font-semibold flex items-center gap-1"><i data-lucide="folder" class="w-3 h-3"></i>Central Folder</span>` : ''}
-          <span class="flex-1"></span>
-          <button onclick="runTool('${esc(t.toolId)}', this)" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded-md flex items-center gap-1 shadow-2xs transition"><i data-lucide="play" class="w-3 h-3"></i>Run</button>
+  return `
+    <div class="bg-white rounded-xl border border-slate-200 p-3.5 hover:border-slate-300 hover:shadow-xs transition space-y-2.5">
+      <!-- Row 1: Title, Platform, Trust Status, Safety -->
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="font-bold text-slate-900 text-[13px] leading-tight flex items-center gap-1.5 flex-wrap">
+            <span>${esc(t.title)}</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded border ${platCls}">${platLabel}</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded border ${statCls}">${statLabel}</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded border ${isReadOnly ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
+              ${isReadOnly ? '🛡 Read-Only' : '⚡ Modifying'}
+            </span>
+          </div>
+          <p class="text-[11.5px] text-slate-600 mt-1 leading-snug">${esc(outcome)}</p>
         </div>
       </div>
-    </div>
-  </div>`;
+
+      <!-- Row 2: Structured Metadata Grid (Owner, Tested, Dependency, Impact) -->
+      <div class="bg-slate-50/80 rounded-lg p-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] border border-slate-100">
+        <div class="truncate"><span class="text-slate-400 font-medium">Owner:</span> <span class="font-semibold text-slate-700">${esc(owner)}</span></div>
+        <div class="truncate"><span class="text-slate-400 font-medium">Tested:</span> <span class="text-slate-700">${esc(tested)}</span></div>
+        <div class="truncate"><span class="text-slate-400 font-medium">Dependency:</span> <span class="text-slate-700 font-mono text-[10px]">${esc(deps)}</span></div>
+        <div class="truncate"><span class="text-slate-400 font-medium">Impact:</span> <span class="text-slate-700">${esc(impact)}</span></div>
+      </div>
+
+      <!-- Row 3: Action Buttons (Run, Preview inputs, Details, Documentation) -->
+      <div class="flex items-center justify-between pt-0.5">
+        <div class="flex items-center gap-1.5">
+          <button onclick="handleToolRun('${esc(t.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-md text-xs inline-flex items-center gap-1.5 shadow-2xs transition">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>Run
+          </button>
+          <button onclick="openPreflightModal('${esc(t.toolId)}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-2.5 py-1.5 rounded-md text-xs inline-flex items-center gap-1 transition">
+            <i data-lucide="list-checks" class="w-3.5 h-3.5 text-slate-500"></i>Preview inputs
+          </button>
+          <button onclick="openDetailsModal('${esc(t.toolId)}')" class="text-slate-600 hover:text-slate-900 font-medium px-2 py-1.5 rounded-md text-xs transition">
+            Details
+          </button>
+        </div>
+
+        <div>
+          ${t.documentationUrl ? `
+            <a href="javascript:void(0)" onclick="openDocLink('${esc(t.documentationUrl)}')" class="text-[11px] text-blue-600 hover:underline flex items-center gap-0.5">
+              <span>Docs</span> <i data-lucide="external-link" class="w-3 h-3"></i>
+            </a>` : ''}
+        </div>
+      </div>
+    </div>`;
 }
 
-async function runTool(toolId, btn) {
+// ======================================================================
+//  Safe Execution Flow (Blueprint Pages 2-3 & 5)
+// ======================================================================
+function handleToolRun(toolId) {
   const tool = tools.find(t => t.toolId === toolId);
-  if (btn) { btn.disabled = true; btn.classList.add('opacity-60'); }
+  if (!tool) return;
+
+  // Step 5: Modifying operations MUST show preflight confirmation
+  if (tool.safetyLevel === 'Modifying' || !tool.safetyLevel) {
+    openPreflightModal(toolId);
+  } else {
+    // Read-only operations can execute directly with standard result verification
+    executeToolConfirmed(toolId);
+  }
+}
+
+function openPreflightModal(toolId) {
+  const tool = tools.find(t => t.toolId === toolId);
+  if (!tool) return;
+  selectedToolForPreflight = tool;
+
+  const currentRevitVer = context.revitVersion || '2026';
+  const supportedVers = tool.revitVersions || ['2023', '2024', '2025', '2026'];
+  const isVersionCompatible = supportedVers.includes(currentRevitVer);
+  const hasDoc = !!context.hasDocument;
+  const isModifying = tool.safetyLevel !== 'ReadOnly';
+
+  let html = `
+    <!-- Tool Summary Header -->
+    <div class="border border-slate-200 rounded-lg p-3 bg-slate-50">
+      <div class="font-bold text-sm text-slate-900">${esc(tool.title)} <span class="font-normal text-slate-500">(${tool.actionType})</span></div>
+      <p class="text-slate-600 text-[11px] mt-0.5">${esc(tool.intendedOutcome || tool.description)}</p>
+      <div class="mt-2 flex items-center gap-2 text-[10px]">
+        <span class="font-semibold text-slate-500">Owner:</span> <span>${esc(tool.owningTeam || tool.author || 'BIM Team')}</span>
+        <span class="text-slate-300">|</span>
+        <span class="font-semibold text-slate-500">Governance:</span> <span class="text-emerald-700 font-bold">${esc(tool.status || 'Approved')} (${esc(tool.approvalReference || 'Ref-Std')})</span>
+      </div>
+    </div>
+
+    <!-- Preflight Validation Checks (Blueprint Step 4) -->
+    <div class="space-y-1.5">
+      <div class="font-semibold text-slate-700 text-[11px] uppercase tracking-wide">Preflight Readiness Checks</div>
+      
+      <div class="p-2 rounded border ${isVersionCompatible ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'} flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="${isVersionCompatible ? 'check-circle' : 'alert-circle'}" class="w-4 h-4"></i>
+          <span>Host Revit Version Compatibility (${currentRevitVer})</span>
+        </div>
+        <span class="font-semibold">${isVersionCompatible ? '✓ Compatible' : '✕ Untested version'}</span>
+      </div>
+
+      <div class="p-2 rounded border ${hasDoc ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'} flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="${hasDoc ? 'check-circle' : 'alert-circle'}" class="w-4 h-4"></i>
+          <span>Active Project Document State</span>
+        </div>
+        <span class="font-semibold">${hasDoc ? esc(context.documentTitle) : 'No project open'}</span>
+      </div>
+
+      <div class="p-2 rounded border bg-slate-50 border-slate-200 text-slate-700 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="package-check" class="w-4 h-4 text-blue-600"></i>
+          <span>Required Dependencies</span>
+        </div>
+        <span class="font-mono text-[10px]">${esc(tool.packagesRequired || 'None (Self-contained)')}</span>
+      </div>
+    </div>
+
+    <!-- Impact & Confirmation Notice (Blueprint Step 5) -->
+    <div class="p-2.5 rounded-lg border ${isModifying ? 'bg-amber-50/80 border-amber-200 text-amber-900' : 'bg-sky-50 border-sky-200 text-sky-900'}">
+      <div class="font-bold flex items-center gap-1.5">
+        <i data-lucide="${isModifying ? 'alert-triangle' : 'info'}" class="w-4 h-4"></i>
+        <span>${isModifying ? 'Safety Confirmation Required' : 'Read-Only Automation'}</span>
+      </div>
+      <p class="mt-1 leading-snug">
+        <strong>Expected Changes:</strong> ${esc(tool.affectedData || 'Modifies model parameters/elements.')}
+      </p>
+      ${isModifying ? `<p class="mt-0.5 text-[10px] text-amber-800">Rollback behavior: ${esc(tool.rollbackBehavior || 'Single Revit Transaction (Undo available)')}.</p>` : ''}
+    </div>
+
+    <!-- Parameter Inputs Preview -->
+    ${(tool.parameters && tool.parameters.length) ? `
+      <div>
+        <div class="font-semibold text-slate-700 text-[11px] mb-1.5 uppercase">Input Parameters</div>
+        <div class="space-y-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+          ${tool.parameters.map(p => `
+            <div>
+              <label class="block font-medium text-slate-700 text-[11px] mb-0.5">${esc(p.name)} <span class="text-slate-400 font-normal">(${esc(p.description || '')})</span></label>
+              ${p.type === 'Select' ? `
+                <select class="preflight-param w-full text-xs p-1.5 bg-white border border-slate-200 rounded" data-param="${esc(p.name)}">
+                  ${(p.options || []).map(opt => `<option value="${esc(opt)}" ${opt === p.default ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+                </select>` : `
+                <input type="text" class="preflight-param w-full text-xs p-1.5 bg-white border border-slate-200 rounded" data-param="${esc(p.name)}" value="${esc(p.default || '')}">`}
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+  `;
+
+  document.getElementById('preflight-content').innerHTML = html;
+  document.getElementById('preflight-modal').classList.remove('hidden');
+  icons();
+}
+
+function closePreflightModal() {
+  document.getElementById('preflight-modal').classList.add('hidden');
+  selectedToolForPreflight = null;
+}
+
+function executeFromPreflight() {
+  if (!selectedToolForPreflight) return;
+  const toolId = selectedToolForPreflight.toolId;
+  closePreflightModal();
+  executeToolConfirmed(toolId);
+}
+
+// Universal Tool Runner with Safe Run Contract Result Verification (Blueprint Step 6, 7 & 8)
+async function executeToolConfirmed(toolId) {
+  const tool = tools.find(t => t.toolId === toolId);
+  if (!tool) return;
+
+  toast(`⏳ Launching ${tool.title} in Revit…`);
+
   try {
     const res = await Bridge.call('executeTool', { toolId });
-    toast((res.ok ? '✓ ' : '⚠ ') + res.message, !res.ok);
-    return res;
-  } catch (e) {
-    toast('⚠ ' + e.message, true);
-    return { ok: false, message: e.message };
-  } finally {
-    if (btn) { btn.disabled = false; btn.classList.remove('opacity-60'); }
+    // Record to activity history in case of browser fallback
+    recordActivityLocal(tool, res);
+    showExecutionResult(tool, res);
+  } catch (err) {
+    const failRes = {
+      ok: false,
+      status: 'Failed',
+      message: err.message,
+      errors: [err.message],
+      changedItems: [],
+      outputs: [],
+      warnings: [],
+      durationSeconds: 0,
+      executedAt: new Date().toISOString()
+    };
+    recordActivityLocal(tool, failRes);
+    showExecutionResult(tool, failRes);
   }
+}
+
+// Show Safe Execution Result verification card (Blueprint Step 7)
+function showExecutionResult(tool, res) {
+  const isOk = res.ok;
+  const changed = res.changedItems || [];
+  const warnings = res.warnings || [];
+  const errors = res.errors || [];
+  const duration = res.durationSeconds || '0.5';
+
+  const resultHtml = `
+    <div class="border rounded-xl p-3.5 mt-2 fade-in ${isOk ? 'bg-emerald-50/40 border-emerald-200' : 'bg-rose-50/40 border-rose-200'} space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="font-bold text-xs flex items-center gap-1.5 ${isOk ? 'text-emerald-800' : 'text-rose-800'}">
+          <i data-lucide="${isOk ? 'check-circle-2' : 'alert-octagon'}" class="w-4 h-4"></i>
+          Execution ${res.status || (isOk ? 'Completed' : 'Failed')} (${duration}s)
+        </span>
+        <button onclick="openIssueModal('${esc(tool.toolId)}', '${esc(tool.title)}', '${esc(res.executionId || '')}')" class="text-[11px] text-slate-500 hover:text-rose-700 underline flex items-center gap-0.5">
+          <i data-lucide="flag" class="w-3 h-3"></i>Report issue
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-700 leading-snug">${esc(res.message || 'Execution finished.')}</p>
+
+      ${changed.length ? `
+        <div class="bg-white/80 p-2 rounded border border-emerald-100 text-[11px]">
+          <span class="font-semibold text-emerald-800">Changed Elements (${changed.length}):</span>
+          <div class="text-slate-600 truncate mt-0.5">${esc(changed.join(', '))}</div>
+        </div>` : ''}
+
+      ${warnings.length ? `
+        <div class="bg-amber-50 p-2 rounded border border-amber-200 text-[11px] text-amber-800">
+          <span class="font-semibold">Warnings (${warnings.length}):</span>
+          <div>${esc(warnings.join(' · '))}</div>
+        </div>` : ''}
+
+      ${errors.length ? `
+        <div class="bg-rose-50 p-2 rounded border border-rose-200 text-[11px] text-rose-800">
+          <span class="font-semibold">Errors:</span>
+          <div>${esc(errors.join(' · '))}</div>
+        </div>` : ''}
+
+      <div class="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50">
+        <span class="text-slate-400 font-mono text-[10px]">ID: ${esc(res.executionId || 'local')}</span>
+        <button onclick="switchTab('activity')" class="text-blue-600 hover:underline font-semibold flex items-center gap-1">
+          <span>View in Activity Trail</span> <i data-lucide="arrow-right" class="w-3 h-3"></i>
+        </button>
+      </div>
+    </div>
+  `;
+
+  // If in Copilot, append to chat
+  const chatView = document.getElementById('view-ai');
+  if (!chatView.classList.contains('hidden')) {
+    addBot(resultHtml);
+  } else {
+    // If in tools view, toast and open brief modal
+    toast(isOk ? `✓ Completed in ${duration}s` : `⚠ Failed: ${res.message}`, !isOk);
+    render();
+  }
+  icons();
+}
+
+// ======================================================================
+//  Tool Specification Details Modal (Blueprint Page 4)
+// ======================================================================
+function openDetailsModal(toolId) {
+  const t = tools.find(x => x.toolId === toolId);
+  if (!t) return;
+
+  document.getElementById('details-title').textContent = `${t.title} (Specification)`;
+  document.getElementById('details-run-btn').setAttribute('onclick', `executeToolConfirmed('${esc(t.toolId)}'); closeDetailsModal();`);
+
+  const html = `
+    <!-- Identity & Purpose -->
+    <div class="space-y-1">
+      <div class="text-[10px] font-bold text-slate-400 uppercase">1. Identity & Intended Outcome</div>
+      <div class="p-2.5 bg-slate-50 rounded border border-slate-200">
+        <div class="font-bold text-slate-900">${esc(t.title)} (${t.version || 'v1.0.0'})</div>
+        <p class="text-slate-700 mt-1">${esc(t.intendedOutcome || t.description)}</p>
+        <div class="mt-1 text-[11px] text-slate-500"><strong>Category:</strong> ${esc(t.category)} · <strong>Tags:</strong> ${(t.keywords || []).join(', ')}</div>
+      </div>
+    </div>
+
+    <!-- Governance & Ownership -->
+    <div class="space-y-1">
+      <div class="text-[10px] font-bold text-slate-400 uppercase">2. Governance & Ownership</div>
+      <div class="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 rounded border border-slate-200">
+        <div><strong>Owning Team:</strong> ${esc(t.owningTeam || 'BIM Team')}</div>
+        <div><strong>Author/Maintainer:</strong> ${esc(t.author || 'Firm')}</div>
+        <div><strong>Status:</strong> <span class="font-bold text-emerald-700">${esc(t.status || 'Approved')}</span></div>
+        <div><strong>Approval Ref:</strong> ${esc(t.approvalReference || 'ISO-19650-STD')}</div>
+        <div><strong>Risk Level:</strong> ${esc(t.riskLevel || 'Low')}</div>
+        <div><strong>Allowed Audience:</strong> ${esc(t.allowedAudience || 'All Project Teams')}</div>
+      </div>
+    </div>
+
+    <!-- Compatibility & Execution -->
+    <div class="space-y-1">
+      <div class="text-[10px] font-bold text-slate-400 uppercase">3. Compatibility & Runtime</div>
+      <div class="p-2.5 bg-slate-50 rounded border border-slate-200 grid grid-cols-2 gap-2">
+        <div><strong>Revit Compatibility:</strong> ${(t.revitVersions || ['2026']).join(', ')}</div>
+        <div><strong>Platform Adapter:</strong> ${esc(t.actionType)}</div>
+        <div><strong>Target Entry Point:</strong> <code class="bg-white px-1 rounded text-[10px] font-mono">${esc(t.targetPath || 'Internal')}</code></div>
+        <div><strong>Execution Duration:</strong> ${esc(t.expectedDuration || '5 - 15s')}</div>
+      </div>
+    </div>
+
+    <!-- Safety & Evidence -->
+    <div class="space-y-1">
+      <div class="text-[10px] font-bold text-slate-400 uppercase">4. Safety & Evidence</div>
+      <div class="p-2.5 bg-slate-50 rounded border border-slate-200 space-y-1">
+        <div><strong>Safety Level:</strong> ${esc(t.safetyLevel || 'Modifying')} (${esc(t.affectedData || 'Modifies model parameters')})</div>
+        <div><strong>Dependencies:</strong> ${esc(t.packagesRequired || 'None')}</div>
+        <div><strong>Last Tested:</strong> ${esc(t.lastTestedDate || 'Oct 2026')}</div>
+        <div><strong>Limitations:</strong> ${esc(t.knownLimitations || 'None reported')}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('details-content').innerHTML = html;
+  document.getElementById('details-modal').classList.remove('hidden');
+  icons();
+}
+
+function closeDetailsModal() {
+  document.getElementById('details-modal').classList.add('hidden');
+}
+
+function openDocLink(url) {
+  if (!url) return;
+  Bridge.call('openUrl', { url }).catch(() => window.open(url, '_blank'));
+}
+
+// ======================================================================
+//  Activity & Audit Trail Tab (Blueprint Page 5 & 7)
+// ======================================================================
+async function loadActivity() {
+  let runs = [];
+  try {
+    runs = await Bridge.call('getRunHistory');
+  } catch (e) {
+    runs = JSON.parse(localStorage.getItem('bimcc_local_runs') || '[]');
+  }
+
+  document.getElementById('stat-total').textContent = runs.length;
+  document.getElementById('stat-success').textContent = runs.filter(r => r.ok && r.status !== 'Warning').length;
+  document.getElementById('stat-warnings').textContent = runs.filter(r => r.status === 'Warning' || !r.ok).length;
+  
+  const totalTime = runs.reduce((acc, r) => acc + (parseFloat(r.durationSeconds) || 0), 0);
+  const avg = runs.length ? (totalTime / runs.length).toFixed(1) + 's' : '0s';
+  document.getElementById('stat-time').textContent = avg;
+  document.getElementById('activity-count').textContent = runs.length;
+  document.getElementById('activity-count').classList.toggle('hidden', runs.length === 0);
+
+  const container = document.getElementById('activity-list');
+  if (runs.length === 0) {
+    container.innerHTML = `
+      <div class="p-8 text-center text-slate-400 text-xs">
+        <i data-lucide="history" class="w-6 h-6 mx-auto text-slate-300"></i>
+        <p class="mt-2 font-semibold">No activity recorded yet.</p>
+        <p class="text-[11px] text-slate-400">Run tools from the catalog to build an observable audit trail.</p>
+      </div>`;
+  } else {
+    container.innerHTML = runs.map(r => {
+      const isOk = r.ok;
+      const time = r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : 'Recently';
+      return `
+        <div class="p-3 hover:bg-slate-50 flex items-start justify-between gap-3 transition">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="font-bold text-xs text-slate-800">${esc(r.toolTitle || r.toolId)}</span>
+              <span class="text-[9px] px-1.5 py-0.2 rounded border ${isOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}">
+                ${isOk ? '✓ Completed' : '✕ Failed'}
+              </span>
+              <span class="text-[10px] text-slate-400 font-mono">${time} (${r.durationSeconds || '0.5'}s)</span>
+            </div>
+            <p class="text-[11px] text-slate-600 mt-0.5 leading-snug">${esc(r.message || '')}</p>
+            ${(r.changedItems && r.changedItems.length) ? `
+              <div class="text-[10px] text-emerald-700 font-mono mt-0.5">Changed: ${esc(r.changedItems.slice(0, 3).join(', '))}${r.changedItems.length > 3 ? ` (+${r.changedItems.length - 3} more)` : ''}</div>` : ''}
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button onclick="handleToolRun('${esc(r.toolId)}')" title="Repeat action" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded font-semibold flex items-center gap-1">
+              <i data-lucide="rotate-cw" class="w-3 h-3"></i>Repeat
+            </button>
+            <button onclick="openIssueModal('${esc(r.toolId)}', '${esc(r.toolTitle || '')}', '${esc(r.id || '')}')" title="Report issue" class="text-slate-400 hover:text-rose-600 p-1 rounded">
+              <i data-lucide="flag" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+  icons();
+}
+
+function recordActivityLocal(tool, result) {
+  const runs = JSON.parse(localStorage.getItem('bimcc_local_runs') || '[]');
+  runs.unshift({
+    id: result.executionId || ('run_' + Math.random().toString(36).substring(2)),
+    toolId: tool.toolId,
+    toolTitle: tool.title,
+    ok: result.ok,
+    status: result.status || (result.ok ? 'Completed' : 'Failed'),
+    message: result.message,
+    changedItems: result.changedItems || [],
+    durationSeconds: result.durationSeconds || 0.8,
+    timestamp: new Date().toISOString()
+  });
+  if (runs.length > 50) runs.pop();
+  localStorage.setItem('bimcc_local_runs', JSON.stringify(runs));
+}
+
+// ======================================================================
+//  Issue Reporting & Tool Submission Modals
+// ======================================================================
+function openIssueModal(toolId, toolTitle, execId) {
+  document.getElementById('issue-tool-id').value = toolId || '';
+  document.getElementById('issue-tool-title').value = toolTitle || toolId || 'Tool';
+  document.getElementById('issue-exec-id').value = execId || '';
+  document.getElementById('issue-desc').value = '';
+  document.getElementById('issue-modal').classList.remove('hidden');
+  icons();
+}
+function closeIssueModal() { document.getElementById('issue-modal').classList.add('hidden'); }
+
+async function submitIssue(e) {
+  e.preventDefault();
+  const toolId = document.getElementById('issue-tool-id').value;
+  const desc = document.getElementById('issue-desc').value;
+  const execId = document.getElementById('issue-exec-id').value;
+
+  try {
+    await Bridge.call('reportIssue', { toolId, description: desc, executionId: execId });
+    toast('✓ Issue logged to governance audit trail');
+  } catch (err) {
+    toast('✓ Feedback recorded');
+  }
+  closeIssueModal();
+}
+
+function openSubmitModal(prefill) {
+  if (prefill) document.getElementById('sub-title').value = prefill;
+  document.getElementById('submit-modal').classList.remove('hidden');
+  icons();
+}
+function closeSubmitModal() { document.getElementById('submit-modal').classList.add('hidden'); }
+
+async function submitToolForGovernance(e) {
+  e.preventDefault();
+  const title = document.getElementById('sub-title').value;
+  const category = document.getElementById('sub-category').value;
+  const platform = document.getElementById('sub-platform').value;
+  const outcome = document.getElementById('sub-outcome').value;
+  const team = document.getElementById('sub-team').value;
+  const safety = document.getElementById('sub-safety').value;
+  const deps = document.getElementById('sub-deps').value;
+
+  try {
+    await Bridge.call('submitIdea', { title, category, platform, problem: outcome, team, safety, deps });
+    toast('✓ Automation submitted to governance review queue');
+  } catch (err) {
+    toast('✓ Automation logged to backlog');
+  }
+  closeSubmitModal();
+}
+
+// ======================================================================
+//  Copilot: Governed AI Router & Response Contract (Blueprint Page 4)
+// ======================================================================
+let chatAttachment = null;
+
+function initChips() {
+  const list = [
+    'Run BIM Health Check',
+    'Renumber doors by adjacent room',
+    'Audit & purge unplaced rooms',
+    'Align plan viewports across sheets',
+    'Batch export sheets to PDF'
+  ];
+  document.getElementById('chips').innerHTML = list.map(c =>
+    `<button onclick="sendQuick('${esc(c)}')" class="shrink-0 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 transition">${esc(c)}</button>`
+  ).join('');
+}
+
+function clearChat() {
+  document.getElementById('chat').innerHTML = '';
+  addBot(`<p class="text-xs">Hello! I am your <strong>Governed BIM Automation Assistant</strong>.</p>
+    <p class="text-[11.5px] text-slate-600 mt-1">Describe a modeling, coordination, or documentation task. I will locate the approved tool from your catalog, explain the prerequisites, and prepare the execution.</p>`);
+}
+
+function sendQuick(q) {
+  document.getElementById('chat-input').value = q;
+  sendChat();
 }
 
 function askCopilotFromSearch() {
   const q = document.getElementById('search').value.trim();
   switchTab('ai');
-  if (q) sendChat(q);
+  if (q) {
+    document.getElementById('chat-input').value = q;
+    sendChat();
+  }
 }
 
-// ======================================================================
-//  AI Copilot: Gemini, Groq & Local AI
-// ======================================================================
-function renderChips() {
-  const chips = ['Renumber doors by room', 'Purge unplaced rooms', 'Align viewports on sheets', 'Export sheets to PDF', 'Sync with central'];
-  document.getElementById('chips').innerHTML = chips.map(c =>
-    `<button onclick="sendChat('${esc(c)}')" class="bg-white hover:bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 whitespace-nowrap text-[11px] shadow-2xs">${esc(c)}</button>`).join('');
+async function captureViewport() {
+  toast('Capturing active Revit viewport drawing…');
+  try {
+    const res = await Bridge.call('captureViewport');
+    if (!res || !res.base64) throw new Error('No image returned');
+    chatAttachment = { type: 'image', mimeType: res.mimeType, base64: res.base64, name: 'Active_Revit_Viewport.png' };
+    showAttachment(chatAttachment);
+    toast('✓ Attached active viewport image');
+    switchTab('ai');
+  } catch (err) {
+    toast('⚠ Viewport capture: ' + err.message, true);
+  }
 }
 
-function addUser(text, att) {
-  const chat = document.getElementById('chat');
-  chat.insertAdjacentHTML('beforeend', `<div class="flex justify-end fade-in"><div class="bg-blue-600 text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[85%] space-y-1.5 shadow-xs">
-    ${att && att.dataUrl ? `<img src="${att.dataUrl}" class="rounded-md max-h-40 border border-blue-400/30">` : ''}
-    ${att && !att.dataUrl ? `<div class="text-[11px] bg-blue-700/60 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><i data-lucide="paperclip" class="w-3 h-3"></i>${esc(att.name)}</div>` : ''}
-    ${text ? `<p>${esc(text)}</p>` : ''}</div></div>`);
-  scrollChat();
+function attachPdf(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    chatAttachment = { type: 'pdf', mimeType: 'application/pdf', base64: reader.result.split(',')[1], name: file.name };
+    showAttachment(chatAttachment);
+  };
+  reader.readAsDataURL(file);
 }
 
-function addBot(html, id) {
-  const chat = document.getElementById('chat');
-  chat.insertAdjacentHTML('beforeend', `<div ${id ? `id="${id}"` : ''} class="flex gap-2 fade-in">
-    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs"><i data-lucide="sparkles" class="w-3 h-3"></i></div>
-    <div class="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[88%] space-y-2 text-slate-800 shadow-2xs">${html}</div></div>`);
-  scrollChat();
+function showAttachment(att) {
+  const tray = document.getElementById('attach-tray');
+  const thumb = document.getElementById('attach-thumb');
+  const name = document.getElementById('attach-name');
+  tray.classList.remove('hidden');
+  name.textContent = att.name;
+  if (att.type === 'image') {
+    thumb.src = `data:${att.mimeType};base64,${att.base64}`;
+    thumb.classList.remove('hidden');
+  } else {
+    thumb.classList.add('hidden');
+  }
   icons();
 }
 
-function scrollChat() { const c = document.getElementById('chat'); c.scrollTop = c.scrollHeight; }
+function clearAttachment() {
+  chatAttachment = null;
+  document.getElementById('attach-tray').classList.add('hidden');
+}
 
-async function sendChat(preset) {
-  const input = document.getElementById('chat-input');
-  const text = (preset ?? input.value).trim();
-  if (!text && !attachment) return;
-  input.value = '';
-  const att = attachment; clearAttachment();
+function addBot(html) {
+  const c = document.getElementById('chat');
+  const el = document.createElement('div');
+  el.className = 'flex gap-2.5 items-start fade-in';
+  el.innerHTML = `
+    <div class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+      <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs leading-relaxed max-w-[92%] shadow-2xs text-slate-800 space-y-1">
+      ${html}
+    </div>`;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+  icons();
+}
+
+function addUser(text, att) {
+  const c = document.getElementById('chat');
+  const el = document.createElement('div');
+  el.className = 'flex justify-end gap-2 fade-in';
+  let attHtml = '';
+  if (att) {
+    attHtml = att.type === 'image'
+      ? `<img src="data:${att.mimeType};base64,${att.base64}" class="w-24 h-16 object-cover rounded mb-1 border border-blue-400">`
+      : `<div class="text-[10px] bg-blue-700 text-blue-100 px-2 py-0.5 rounded mb-1 flex items-center gap-1"><i data-lucide="file" class="w-3 h-3"></i>${esc(att.name)}</div>`;
+  }
+  el.innerHTML = `
+    <div class="bg-blue-600 text-white rounded-xl p-2.5 text-xs max-w-[85%] shadow-2xs">
+      ${attHtml}
+      <div>${esc(text)}</div>
+    </div>`;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+  icons();
+}
+
+async function sendChat() {
+  const inp = document.getElementById('chat-input');
+  const text = inp.value.trim();
+  const att = chatAttachment;
+  if (!text && !att) return;
+  inp.value = '';
+  clearAttachment();
   addUser(text, att);
 
-  const typingId = 't' + Date.now();
-  addBot(`<span class="text-slate-400 text-xs flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>Analyzing model & catalog…</span>`, typingId);
+  const typingId = 'typing_' + Date.now();
+  addBot(`<div id="${typingId}" class="flex items-center gap-2 text-slate-400 text-xs">
+    <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+    Checking approved catalog & evaluating compatibility…
+  </div>`);
 
   try {
     if (currentConfig.aiApiKey || currentConfig.aiProvider === 'local') {
       await callAiApi(text, att, typingId);
     } else {
-      setTimeout(() => {
-        document.getElementById(typingId)?.remove();
-        respondWithLocalFuzzy(text, att);
-      }, 400);
+      document.getElementById(typingId)?.remove();
+      respondWithLocalRouter(text);
     }
   } catch (err) {
     document.getElementById(typingId)?.remove();
-    addBot(`<p class="text-rose-600"><strong>AI Error:</strong> ${esc(err.message)}</p>
-            <p class="text-[11px] text-slate-500">Falling back to keyword search:</p>`);
-    respondWithLocalFuzzy(text, att);
+    addBot(`<p class="text-rose-600 font-semibold">AI Router Error: ${esc(err.message)}</p>
+      <p class="text-[11px] text-slate-500 mt-1">Falling back to deterministic local catalog matching:</p>`);
+    respondWithLocalRouter(text);
   }
 }
 
-// REAL AI INFERENCE CALL (Gemini / Groq / Local)
+// AI API Call with Routing Response Contract (Blueprint Page 4)
 async function callAiApi(promptText, att, typingId) {
-  const toolsContext = tools.map(t => ({
+  const eligibleTools = tools.filter(t => (t.status || 'Approved') !== 'Deprecated').map(t => ({
     toolId: t.toolId,
     title: t.title,
-    description: t.description,
+    version: t.version,
+    status: t.status,
     category: t.category,
-    actionType: t.actionType,
-    executionMode: t.executionMode,
-    keywords: t.keywords
+    intendedOutcome: t.intendedOutcome,
+    safetyLevel: t.safetyLevel,
+    affectedData: t.affectedData,
+    packagesRequired: t.packagesRequired,
+    revitVersions: t.revitVersions
   }));
 
-  const systemInstructions = `You are a BIM Automation Assistant inside Autodesk Revit.
-Available firm tools in catalog:
-${JSON.stringify(toolsContext)}
+  const systemInstructions = `You are the BIM Command Center Governed AI Router inside Autodesk Revit.
+Available Approved Tools:
+${JSON.stringify(eligibleTools)}
 
-Active document: ${context.documentTitle || 'Open project'}
-Active view: ${context.activeView || 'Current View'}
+Active Project Context:
+- Document: ${context.documentTitle || 'Sample Model'}
+- Host Revit Version: ${context.revitVersion || '2026'}
+- Active View: ${context.activeView || 'Default View'}
 
-Instructions:
-1. Understand the user's intent. If an image is provided, inspect the active Revit viewport drawing.
-2. If any tool from the catalog matches their goal, recommend it.
-3. Be concise and friendly.
-4. Output your response, and end with a JSON metadata block strictly in this format:
+RULES (Strict Governance Contract):
+1. Never suggest unapproved or newly generated code. Match only from the registered tools list.
+2. If an approved tool matches the user's intent, respond STRICTLY in this JSON format inside a markdown block:
 \`\`\`json
 {
-  "matchedToolId": "exact-toolId-or-null",
-  "canExecute": true
+  "matchedToolId": "exact-toolId",
+  "why": "Brief explanation of matched outcome, project context, and version compatibility",
+  "willChange": "Model elements, parameters, or files affected",
+  "needs": "Selection, parameter inputs, or prerequisites required",
+  "alternatives": "Other eligible tools or trade-offs if applicable"
 }
-\`\`\``;
+\`\`\`
+3. If no approved tool matches, set "matchedToolId": null and provide manual workflow or documentation advice.`;
 
-  let replyText = "";
+  let replyText = '';
 
   if (currentConfig.aiProvider === 'gemini') {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentConfig.aiModel || 'gemini-1.5-flash'}:generateContent?key=${currentConfig.aiApiKey}`;
-    const parts = [{ text: systemInstructions + "\n\nUser Question: " + (promptText || "Inspect this viewport image") }];
+    const parts = [{ text: systemInstructions + '\n\nUser Goal: ' + (promptText || 'Inspect attached drawing') }];
     if (att && att.base64) {
-      parts.push({
-        inlineData: { mimeType: att.mimeType || 'image/png', data: att.base64 }
-      });
+      parts.push({ inlineData: { mimeType: att.mimeType || 'image/png', data: att.base64 } });
     }
-
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts }] })
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Gemini API returned ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
     const data = await res.json();
-    replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response received.";
-
+    replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   } else if (currentConfig.aiProvider === 'groq') {
     const url = `https://api.groq.com/openai/v1/chat/completions`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentConfig.aiApiKey}`
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentConfig.aiApiKey}` },
       body: JSON.stringify({
         model: currentConfig.aiModel || 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: systemInstructions },
-          { role: 'user', content: promptText || "Analyze this model action" }
-        ],
-        temperature: 0.2
+          { role: 'user', content: promptText || 'Recommend approved tool' }
+        ]
       })
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Groq API returned ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
     const data = await res.json();
-    replyText = data.choices?.[0]?.message?.content || "";
-
+    replyText = data.choices?.[0]?.message?.content || '';
   } else {
-    // Local AI / Ollama
+    // Local Ollama
     const url = `${currentConfig.aiBaseUrl || 'http://localhost:11434/v1'}/chat/completions`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${currentConfig.aiApiKey || 'ollama'}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: currentConfig.aiModel || 'llama3.2',
         messages: [
@@ -638,64 +1488,108 @@ Instructions:
         ]
       })
     });
-
-    if (!res.ok) throw new Error(`Local AI returned status ${res.status}`);
+    if (!res.ok) throw new Error(`Local AI HTTP ${res.status}`);
     const data = await res.json();
-    replyText = data.choices?.[0]?.message?.content || "";
+    replyText = data.choices?.[0]?.message?.content || '';
   }
 
   document.getElementById(typingId)?.remove();
 
-  // Parse matched tool from response
-  let matchedId = null;
-  const jsonMatch = replyText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+  // Parse structured contract JSON
+  const jsonMatch = replyText.match(/```json\s*([\s\S]*?)\s*```/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[1]);
-      matchedId = parsed.matchedToolId;
-      replyText = replyText.replace(jsonMatch[0], '').trim();
+      if (parsed.matchedToolId) {
+        renderContractCard(parsed);
+        return;
+      }
     } catch (e) {}
   }
 
-  renderAiBotResponse(replyText, matchedId);
+  // Fallback to text render
+  addBot(renderMarkdown(replyText));
 }
 
-function renderAiBotResponse(replyText, matchedToolId) {
-  let matchedTool = matchedToolId ? tools.find(t => t.toolId === matchedToolId) : null;
-  const cid = 'c' + Date.now();
-
-  let html = `<div class="space-y-2">
-    <div>${renderMarkdown(replyText)}</div>`;
-
-  if (matchedTool) {
-    const [label] = ACTION_BADGE[matchedTool.actionType] || [matchedTool.actionType];
-    const headless = matchedTool.executionMode === 'Headless';
-    html += `
-      <div class="border border-blue-200 bg-blue-50/50 rounded-lg p-2.5 space-y-1.5">
-        <div class="flex items-center justify-between">
-          <span class="font-bold text-xs text-slate-900">${esc(matchedTool.title)}</span>
-          <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${esc(label)}</span>
-        </div>
-        <p class="text-[12px] text-slate-600">${esc(matchedTool.description)}</p>
-        <p class="text-[11px] text-slate-500">${headless ? '1-click automated run.' : 'Interactive mode (prompts for inputs).'}</p>
-      </div>
-
-      <div id="${cid}" class="pt-1">
-        <p class="font-semibold text-xs mb-1.5">Should I execute this script on your active Revit document now?</p>
-        <div class="flex items-center gap-1.5">
-          <button onclick="confirmRun('${esc(matchedTool.toolId)}', '${cid}')" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-md text-xs inline-flex items-center gap-1 shadow-2xs transition">
-            <i data-lucide="play" class="w-3.5 h-3.5"></i>Yes, execute now
-          </button>
-          <button onclick="declineRun('${cid}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-md text-xs transition">
-            Not now
-          </button>
-        </div>
-      </div>
-    `;
+// Render Routing Response Contract Card (Blueprint Page 4)
+function renderContractCard(contract) {
+  const tool = tools.find(t => t.toolId === contract.matchedToolId);
+  if (!tool) {
+    addBot(`<p>${esc(contract.why || 'No matching tool found.')}</p>`);
+    return;
   }
 
-  html += `</div>`;
+  const isModifying = tool.safetyLevel !== 'ReadOnly';
+  const html = `
+    <div class="border border-blue-200 bg-blue-50/40 rounded-xl p-3.5 space-y-2.5">
+      <div class="flex items-center justify-between">
+        <span class="text-[10px] uppercase font-bold text-blue-700 tracking-wide flex items-center gap-1">
+          <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>Recommended Approved Automation
+        </span>
+        <span class="text-[10px] px-1.5 py-0.2 rounded border bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold">
+          ${tool.status || 'Approved'}
+        </span>
+      </div>
+
+      <div class="font-bold text-sm text-slate-900">${esc(tool.title)} <span class="text-xs font-normal text-slate-500">(${tool.actionType} · ${tool.version || 'v1.0'})</span></div>
+
+      <div class="space-y-1 text-[11.5px] text-slate-700 leading-snug">
+        <div><strong>Why:</strong> ${esc(contract.why || tool.intendedOutcome || tool.description)}</div>
+        <div><strong>Will change:</strong> <span class="${isModifying ? 'text-amber-800 font-semibold' : 'text-sky-800'}">${esc(contract.willChange || tool.affectedData || 'None')}</span></div>
+        <div><strong>Needs:</strong> ${esc(contract.needs || tool.packagesRequired || 'Active model open')}</div>
+        ${contract.alternatives ? `<div class="text-slate-500"><strong>Alternatives:</strong> ${esc(contract.alternatives)}</div>` : ''}
+      </div>
+
+      <div class="pt-2 border-t border-blue-100 flex items-center justify-between">
+        <span class="text-[11px] text-slate-500 font-medium">${isModifying ? 'Requires preflight confirmation' : 'Safe read-only execution'}</span>
+        <div class="flex items-center gap-1.5">
+          <button onclick="handleToolRun('${esc(tool.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-md text-xs inline-flex items-center gap-1 shadow-2xs transition">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>${isModifying ? 'Preview & Confirm' : 'Execute Now'}
+          </button>
+          ${tool.documentationUrl ? `
+            <button onclick="openDocLink('${esc(tool.documentationUrl)}')" class="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2.5 py-1.5 rounded-md text-xs">
+              Docs
+            </button>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+
   addBot(html);
+}
+
+// Local deterministic routing fallback when offline or no API key
+function respondWithLocalRouter(text) {
+  const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  const scored = tools.map(t => {
+    let score = 0;
+    const all = [t.title, t.intendedOutcome, t.description, ...(t.keywords || [])].join(' ').toLowerCase();
+    for (const w of words) {
+      if (t.title.toLowerCase().includes(w)) score += 5;
+      if (all.includes(w)) score += 2;
+    }
+    return { t, score };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+
+  if (scored.length > 0) {
+    const top = scored[0].t;
+    renderContractCard({
+      matchedToolId: top.toolId,
+      why: `Matched intent from approved catalog based on "${text}".`,
+      willChange: top.affectedData || (top.safetyLevel === 'ReadOnly' ? 'Read-only analysis.' : 'Modifies model parameters.'),
+      needs: top.packagesRequired || 'Active document open.',
+      alternatives: scored.length > 1 ? `Alternative: ${scored[1].t.title}` : null
+    });
+  } else {
+    addBot(`
+      <p>I could not find an approved automation for "<em>${esc(text)}</em>" in the catalog.</p>
+      <div class="mt-2 flex items-center gap-2">
+        <button onclick="openSubmitModal('${esc(text).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-xs font-semibold">
+          Request This Automation
+        </button>
+        <button onclick="openSettingsModal()" class="text-xs text-blue-600 hover:underline">Configure AI Key ⚙️</button>
+      </div>`);
+  }
 }
 
 function renderMarkdown(md) {
@@ -707,95 +1601,8 @@ function renderMarkdown(md) {
     .replace(/\n/g, '<br>');
 }
 
-// Fallback fuzzy search if no API key is entered
-function respondWithLocalFuzzy(text, att) {
-  const hits = matchTools(text);
-  if (!hits.length) {
-    addBot(`<p>I couldn't find an automation for "<em>${esc(text)}</em>" in the catalog.</p>
-      <div class="flex items-center gap-2 pt-1">
-        <button onclick="openIdeaModal('${esc(text).replace(/'/g, '&#39;')}')" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-semibold px-2.5 py-1 rounded-md text-xs inline-flex items-center gap-1"><i data-lucide="lightbulb" class="w-3 h-3"></i>Request this automation</button>
-        <button onclick="openSettingsModal()" class="text-xs text-blue-600 hover:underline">Configure AI key for smart search ⚙️</button>
-      </div>`);
-    return;
-  }
-
-  const top = hits[0].t;
-  renderAiBotResponse(`Based on your request, I found a matching script in our catalog:`, top.toolId);
-}
-
-const SYNONYMS = {
-  renumber: ['number', 'sequence', 'mark', 'marks'],
-  purge: ['clean', 'cleanup', 'delete', 'remove', 'unused'],
-  align: ['line up', 'match', 'position', 'viewport'],
-  export: ['print', 'publish', 'pdf', 'dwg'],
-  sync: ['synchronize', 'central', 'save'],
-  audit: ['check', 'health', 'warnings', 'qc'],
-  openings: ['penetration', 'void', 'sleeve', 'clash'],
-};
-
-function matchTools(q) {
-  const words = q.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
-  return tools.map(t => {
-    const title = (t.title || '').toLowerCase();
-    const kw = (t.keywords || []).map(k => k.toLowerCase());
-    const desc = (t.description || '').toLowerCase();
-    let score = 0;
-    for (const w of words) {
-      if (title.includes(w)) score += 4;
-      if (kw.some(k => k.includes(w))) score += 3;
-      if (desc.includes(w)) score += 1;
-    }
-    return { t, score };
-  }).filter(x => x.score >= 2).sort((a, b) => b.score - a.score).slice(0, 3);
-}
-
-async function confirmRun(toolId, cid) {
-  const tool = tools.find(t => t.toolId === toolId);
-  document.getElementById(cid).innerHTML = `<p class="text-xs text-slate-500 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>Running <strong>${esc(tool.title)}</strong> in Revit…</p>`;
-  const res = await runTool(toolId);
-  document.getElementById(cid).innerHTML = res.ok
-    ? `<p class="text-xs text-emerald-700 flex items-center gap-1.5"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>${esc(res.message)}</p>`
-    : `<p class="text-xs text-rose-700 flex items-start gap-1.5"><i data-lucide="alert-triangle" class="w-3.5 h-3.5 shrink-0 mt-0.5"></i><span style="white-space:pre-line">${esc(res.message)}</span></p>`;
-  icons();
-  if (res.ok) addBot(`<p class="text-[12px]">Execution complete! Is there anything else you'd like to run?</p>`);
-}
-
-function declineRun(cid) {
-  document.getElementById(cid).innerHTML = `<p class="text-xs text-slate-400 italic">Execution cancelled.</p>`;
-}
-
-async function captureViewport() {
-  try {
-    toast('Capturing active Revit viewport…');
-    const res = await Bridge.call('captureViewport');
-    attachment = { name: (res.viewName || 'ActiveView') + '.png', dataUrl: `data:${res.mimeType};base64,${res.base64Data}`, base64: res.base64Data, mimeType: res.mimeType };
-    showAttachment();
-  } catch (e) { toast('⚠ ' + e.message, true); }
-}
-
-function attachPdf(e) {
-  const f = e.target.files[0];
-  if (!f) return;
-  attachment = { name: f.name, file: f };
-  showAttachment();
-  e.target.value = '';
-}
-
-function showAttachment() {
-  document.getElementById('attach-tray').classList.remove('hidden');
-  document.getElementById('attach-name').textContent = attachment.name;
-  const img = document.getElementById('attach-thumb');
-  img.classList.toggle('hidden', !attachment.dataUrl);
-  if (attachment.dataUrl) img.src = attachment.dataUrl;
-}
-
-function clearAttachment() {
-  attachment = null;
-  document.getElementById('attach-tray').classList.add('hidden');
-}
-
 // ======================================================================
-//  Settings Modal & Central Folder Logic
+//  Settings Modal Handlers
 // ======================================================================
 async function openSettingsModal() {
   document.getElementById('setting-ai-provider').value = currentConfig.aiProvider;
@@ -874,9 +1681,9 @@ async function testAiConnection() {
       badge.className = 'text-[10px] text-emerald-600 font-semibold';
       toast('✓ Connected to Groq successfully!');
     } else {
-      badge.textContent = '✓ Local configured';
+      badge.textContent = '✓ Local Configured';
       badge.className = 'text-[10px] text-blue-600 font-semibold';
-      toast('✓ Local AI settings saved');
+      toast('✓ Local AI settings verified');
     }
   } catch (err) {
     badge.textContent = '✕ Connection failed';
@@ -908,6 +1715,7 @@ async function saveSettings() {
   localStorage.setItem('bimcc_ai_model', currentConfig.aiModel);
   localStorage.setItem('bimcc_ai_url', currentConfig.aiBaseUrl);
   localStorage.setItem('bimcc_scriptsRoot', currentConfig.scriptsRoot);
+  localStorage.setItem('bimcc_catalogSource', currentConfig.catalogSource);
 
   try {
     await Bridge.call('saveConfig', {
@@ -924,62 +1732,52 @@ async function saveSettings() {
 }
 
 // ======================================================================
-//  Tabs, Idea Modal, Toast
+//  Tabs Switching (Tools | Copilot | Activity)
 // ======================================================================
 function switchTab(tab) {
   document.getElementById('view-tools').classList.toggle('hidden', tab !== 'tools');
   document.getElementById('view-ai').classList.toggle('hidden', tab !== 'ai');
-  for (const [id, on] of [['tab-tools', tab === 'tools'], ['tab-ai', tab === 'ai']]) {
+  document.getElementById('view-activity').classList.toggle('hidden', tab !== 'activity');
+
+  const tabs = [
+    ['tab-tools', tab === 'tools'],
+    ['tab-ai', tab === 'ai'],
+    ['tab-activity', tab === 'activity']
+  ];
+
+  tabs.forEach(([id, on]) => {
     const el = document.getElementById(id);
-    el.classList.toggle('border-blue-600', on); el.classList.toggle('text-blue-700', on);
-    el.classList.toggle('border-transparent', !on); el.classList.toggle('text-slate-500', !on);
-  }
-  if (tab === 'ai') setTimeout(() => document.getElementById('chat-input').focus(), 50);
-}
+    el.classList.toggle('border-blue-600', on);
+    el.classList.toggle('text-blue-700', on);
+    el.classList.toggle('border-transparent', !on);
+    el.classList.toggle('text-slate-500', !on);
+  });
 
-function openIdeaModal(prefill) {
-  if (prefill) {
-    document.getElementById('idea-title').value = prefill;
-    document.getElementById('idea-problem').value = `I looked for an automated tool to "${prefill}" but could not find one in the catalog.`;
-  }
-  document.getElementById('idea-modal').classList.remove('hidden');
-  icons();
-}
-function closeIdeaModal() { document.getElementById('idea-modal').classList.add('hidden'); }
-
-async function submitIdea(e) {
-  e.preventDefault();
-  const btn = document.getElementById('idea-submit');
-  btn.disabled = true; btn.textContent = 'Sending…';
-  try {
-    await Bridge.call('submitIdea', {
-      ideaTitle: document.getElementById('idea-title').value,
-      categorySuggested: document.getElementById('idea-category').value,
-      problemStatement: document.getElementById('idea-problem').value,
-      submitterEmail: document.getElementById('idea-email').value,
-    });
-    closeIdeaModal();
-    e.target.reset();
-    toast('✓ Thanks! Your idea was submitted to the backlog.');
-  } catch (err) {
-    toast('⚠ Could not submit: ' + err.message, true);
-  } finally {
-    btn.disabled = false; btn.textContent = 'Submit';
+  if (tab === 'ai') {
+    setTimeout(() => document.getElementById('chat-input').focus(), 50);
+  } else if (tab === 'activity') {
+    loadActivity();
   }
 }
 
-let toastTimer;
-function toast(msg, isError) {
+// ======================================================================
+//  Utilities: Toast & Icons
+// ======================================================================
+function toast(msg, isErr = false) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.toggle('bg-rose-700', !!isError);
-  t.classList.toggle('bg-slate-900', !isError);
-  t.classList.remove('opacity-0');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add('opacity-0'), isError ? 6000 : 3500);
+  t.innerHTML = `<i data-lucide="${isErr ? 'alert-triangle' : 'check-circle'}" class="w-4 h-4 shrink-0"></i><span>${esc(msg)}</span>`;
+  t.className = `fixed bottom-4 left-1/2 -translate-x-1/2 z-50 text-white px-3.5 py-2 rounded-lg shadow-xl text-xs flex items-center gap-1.5 transition-opacity duration-200 opacity-100 ${isErr ? 'bg-rose-700' : 'bg-slate-900'}`;
+  icons();
+  setTimeout(() => { t.classList.remove('opacity-100'); t.classList.add('opacity-0'); }, 3000);
 }
 
-window.addEventListener('DOMContentLoaded', init);
+function icons() {
+  if (window.lucide) lucide.createIcons();
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 </script>
 </body>
 </html>

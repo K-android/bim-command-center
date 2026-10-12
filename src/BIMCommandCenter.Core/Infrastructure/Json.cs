@@ -77,6 +77,7 @@ namespace BIMCommandCenter.Core.Infrastructure
         // ---- Convenience accessors -------------------------------------------------
 
         public static Dictionary<string, object> AsObject(object value) => value as Dictionary<string, object>;
+        public static List<object> AsList(object value) => value as List<object>;
 
         public static string Str(this IDictionary<string, object> d, string key, string fallback = null)
         {
