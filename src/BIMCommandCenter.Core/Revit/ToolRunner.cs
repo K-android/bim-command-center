@@ -199,26 +199,32 @@ namespace BIMCommandCenter.Core.Revit
             string scriptName = Path.GetFileName(dynPath);
 
             // User requested: run Dynamo Player which gives inputs and outputs only.
-            // 1. Try launching Dynamo Player in Revit
+            // 1. Try launching Dynamo Player in Revit (Revit's internal ID is ID_PLAYLIST_DYNAMO)
             string[] candidateIds = new[]
             {
-                "ID_VISUAL_PROGRAMMING_DYNAMOPLAYER",
-                "DynamoPlayer",
+                "ID_PLAYLIST_DYNAMO",
+                "ID_STEEL_PLAYLIST_DYNAMO",
+                "ID_ANALYTICAL_AUTOMATION_PLAYLIST_DYNAMO",
                 "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%DynamoPlayer",
-                "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%VisualProgramming_DynamoPlayer"
+                "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%VisualProgramming_DynamoPlayer",
+                "DynamoPlayer",
+                "ID_VISUAL_PROGRAMMING_DYNAMOPLAYER"
             };
 
             bool playerLaunched = false;
             foreach (var idStr in candidateIds)
             {
                 var cmd = RevitCommandId.LookupCommandId(idStr);
-                if (cmd != null && app.CanPostCommand(cmd))
+                if (cmd != null)
                 {
                     try
                     {
-                        app.PostCommand(cmd);
-                        playerLaunched = true;
-                        break;
+                        if (app.CanPostCommand(cmd))
+                        {
+                            app.PostCommand(cmd);
+                            playerLaunched = true;
+                            break;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -229,7 +235,7 @@ namespace BIMCommandCenter.Core.Revit
 
             if (playerLaunched)
             {
-                var res = RunResult.Success($"Dynamo Player launched.\nSelect \"{scriptName}\" in Dynamo Player to configure inputs and review outputs.");
+                var res = RunResult.Success($"Dynamo Player launched.\nSelect \"{scriptName}\" in Dynamo Player to configure inputs and review outputs without opening the node editor.");
                 if (pkgCheck.HasMissing)
                 {
                     res.Warnings.Add("Note: Missing package(s) detected: " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
@@ -237,24 +243,27 @@ namespace BIMCommandCenter.Core.Revit
                 return res;
             }
 
-            // 2. Seamless fallback: If Revit's ribbon cannot post Dynamo Player (e.g. during external event or ribbon state),
-            // invoke the graph directly via DynamoRevitDS automation API so it ALWAYS executes!
-            try
+            // 2. Headless execution if configured
+            string mode = tool.Str("executionMode");
+            if (string.Equals(mode, "Headless", StringComparison.OrdinalIgnoreCase))
             {
-                string mode = tool.Str("executionMode");
-                bool headless = string.Equals(mode, "Headless", StringComparison.OrdinalIgnoreCase);
-
-                var runRes = DynamoRunner.Run(app, dynPath, headless);
-                if (pkgCheck.HasMissing)
+                try
                 {
-                    runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing));
+                    var runRes = DynamoRunner.Run(app, dynPath, true);
+                    if (pkgCheck.HasMissing)
+                    {
+                        runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing));
+                    }
+                    return runRes;
                 }
-                return runRes;
+                catch (Exception ex)
+                {
+                    return RunResult.Fail("Could not execute Dynamo graph: " + ex.Message);
+                }
             }
-            catch (Exception ex)
-            {
-                return RunResult.Fail("Could not execute Dynamo graph: " + ex.Message);
-            }
+
+            // 3. If Dynamo Player could not be posted automatically (e.g. active transaction or ribbon locked)
+            return RunResult.Fail("Dynamo Player command ('ID_PLAYLIST_DYNAMO') is busy or another transaction is active in Revit.\n\nPlease click 'Dynamo Player' on the Manage ribbon tab to view inputs and outputs.");
         }
 
         // ---------------- Ribbon buttons (pyRevit + any add-in) ----------------

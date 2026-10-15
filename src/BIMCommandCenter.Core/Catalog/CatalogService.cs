@@ -77,7 +77,13 @@ namespace BIMCommandCenter.Core.Catalog
                 List<Dictionary<string, object>> raw = new List<Dictionary<string, object>>();
                 try
                 {
-                    raw = await LoadRawAsync(_config.CatalogSource).ConfigureAwait(false);
+                    // Only load external catalog source if configured with a real enterprise source (skip local sample/dummy JSON)
+                    if (!string.IsNullOrWhiteSpace(_config.CatalogSource) &&
+                        !_config.CatalogSource.EndsWith("sample_catalog.json", StringComparison.OrdinalIgnoreCase) &&
+                        !_config.CatalogSource.EndsWith("dummy_catalog.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        raw = await LoadRawAsync(_config.CatalogSource).ConfigureAwait(false);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -130,7 +136,40 @@ namespace BIMCommandCenter.Core.Catalog
 
                     string dir = Path.GetDirectoryName(file);
                     string relDir = dir.Length > root.Length ? dir.Substring(root.Length).TrimStart('\\', '/') : "";
-                    string category = string.IsNullOrWhiteSpace(relDir) ? "Central Library" : relDir.Replace("\\", " / ");
+                    string[] parts = relDir.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    string category = "Central Library";
+                    var engineFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        "Dynamo", "PyRevit", "Python", "Custom Addins", "CustomAddins", "Addins", "Add-ins", "Grasshopper", "Rhino", "Scripts"
+                    };
+
+                    if (parts.Length == 0)
+                    {
+                        category = "Central Library";
+                    }
+                    else if (parts.Length == 1)
+                    {
+                        // e.g. <root>/Documentation OR <root>/Dynamo
+                        category = engineFolderNames.Contains(parts[0]) ? "Central Library" : parts[0];
+                    }
+                    else
+                    {
+                        // e.g. <root>/Documentation/Dynamo OR <root>/Structures/Analysis/PyRevit
+                        // If deepest folder is an engine folder, strip it from category name
+                        if (engineFolderNames.Contains(parts[parts.Length - 1]))
+                        {
+                            category = string.Join(" / ", parts.Take(parts.Length - 1));
+                        }
+                        else if (engineFolderNames.Contains(parts[0]))
+                        {
+                            category = string.Join(" / ", parts.Skip(1));
+                        }
+                        else
+                        {
+                            category = string.Join(" / ", parts);
+                        }
+                    }
 
                     if (existing.Contains(file) || existing.Contains(fileName)) continue;
 

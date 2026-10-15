@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -73,17 +74,15 @@ namespace BIMCommandCenter.Core
         {
             try
             {
-                var pinnedTools = UserRibbonManager.LoadPinnedTools();
-                if (pinnedTools == null || pinnedTools.Count == 0) return;
+                var pinnedTools = UserRibbonManager.LoadPinnedTools() ?? new List<Dictionary<string, object>>();
 
                 RibbonPanel userPanel = app.CreateRibbonPanel(TabName, "My Quick Tools");
-                int maxSlots = Math.Min(pinnedTools.Count, 8);
 
-                for (int i = 0; i < maxSlots; i++)
+                for (int i = 0; i < 8; i++)
                 {
-                    var tool = pinnedTools[i];
-                    string toolId = tool.Str("toolId");
-                    string title = tool.Str("title") ?? ("Tool " + (i + 1));
+                    bool hasTool = i < pinnedTools.Count;
+                    var tool = hasTool ? pinnedTools[i] : null;
+                    string title = hasTool ? (tool.Str("title") ?? ("Tool " + (i + 1))) : $"Slot {i + 1}";
                     string safeTitle = title.Replace(" ", "\n");
                     if (!safeTitle.Contains("\n") && safeTitle.Length > 8)
                     {
@@ -92,14 +91,18 @@ namespace BIMCommandCenter.Core
                     }
 
                     string cmdName = $"BIMCommandCenter.Core.Revit.UserRibbonSlot{i}";
-                    var slotBtn = new PushButtonData($"BIMCC_UserTool_{i}_{toolId}", safeTitle, assemblyPath, cmdName)
+                    var slotBtn = new PushButtonData($"BIMCC_UserTool_{i}", safeTitle, assemblyPath, cmdName)
                     {
-                        ToolTip = $"Execute pinned tool '{title}' directly inside Revit.",
+                        ToolTip = hasTool ? $"Execute pinned tool '{title}' directly inside Revit." : "Pin your favorite automations from BIM Command Center.",
                         LargeImage = QuickToolIcon(32, i),
                         Image = QuickToolIcon(16, i),
                         AvailabilityClassName = typeof(AlwaysAvailable).FullName
                     };
-                    userPanel.AddItem(slotBtn);
+                    var item = userPanel.AddItem(slotBtn) as PushButton;
+                    if (item != null)
+                    {
+                        item.Visible = hasTool;
+                    }
                 }
             }
             catch (Exception ex)
