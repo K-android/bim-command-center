@@ -13,6 +13,8 @@ namespace BIMCommandCenter.Core.Revit
         {
             Document doc = app.ActiveUIDocument?.Document;
             View view = app.ActiveUIDocument?.ActiveView;
+            var rhinoStatus = RhinoInsideDetector.Detect(app);
+
             return new Dictionary<string, object>
             {
                 ["revitVersion"] = app.Application.VersionNumber,
@@ -23,7 +25,10 @@ namespace BIMCommandCenter.Core.Revit
                 ["isWorkshared"] = doc?.IsWorkshared ?? false,
                 ["activeView"] = view?.Name ?? "",
                 ["activeViewType"] = view?.ViewType.ToString() ?? "",
-                ["selectionCount"] = app.ActiveUIDocument?.Selection.GetElementIds().Count ?? 0
+                ["selectionCount"] = app.ActiveUIDocument?.Selection.GetElementIds().Count ?? 0,
+                ["hasRhinoInside"] = rhinoStatus.IsInstalled,
+                ["rhinoInsideLoaded"] = rhinoStatus.IsLoaded,
+                ["rhinoInsideStatus"] = rhinoStatus.Message
             };
         }
 

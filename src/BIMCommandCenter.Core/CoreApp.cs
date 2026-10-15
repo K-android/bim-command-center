@@ -65,17 +65,7 @@ namespace BIMCommandCenter.Core
             };
             panel.AddItem(button);
 
-            // 2. Rhino <-> Revit Exchange Button (Beside Command Center)
-            var rhinoButton = new PushButtonData("BIMCC_RhinoExchange", "Rhino ↔ Revit\nExchange", assemblyPath, typeof(RhinoExchangeCommand).FullName)
-            {
-                ToolTip = "Rhino ↔ Revit Live Exchange: launch Rhino.Inside.Revit, Grasshopper direct shape sync, and computational geometry workflows.",
-                LargeImage = RhinoIcon(32),
-                Image = RhinoIcon(16),
-                AvailabilityClassName = typeof(AlwaysAvailable).FullName
-            };
-            panel.AddItem(rhinoButton);
-
-            // 3. Dynamic User Custom Ribbon Panel ("My Quick Tools")
+            // 2. Dynamic User Custom Ribbon Panel ("My Quick Tools")
             CreateUserRibbonPanel(app, assemblyPath);
         }
 

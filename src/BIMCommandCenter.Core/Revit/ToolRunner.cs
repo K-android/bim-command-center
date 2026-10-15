@@ -100,54 +100,51 @@ namespace BIMCommandCenter.Core.Revit
         private RunResult RunGrasshopperOrRhino(UIApplication app, Dictionary<string, object> tool, string scriptPath)
         {
             string title = tool.Str("title");
+            var status = RhinoInsideDetector.Detect(app);
 
-            // 1. Try invoking Rhino.Inside.Revit if loaded in this Revit session
-            try
+            // 1. If Rhino.Inside.Revit is active and command is available, invoke it
+            if (status.IsInstalled)
             {
-                var rhinoCmd = RevitCommandId.LookupCommandId("CustomCtrl_%CustomCtrl_%Rhinoceros%Rhinoceros%CommandStartRhino");
-                if (rhinoCmd != null && app.CanPostCommand(rhinoCmd))
+                if (status.LaunchCommand != null && app.CanPostCommand(status.LaunchCommand))
                 {
-                    app.PostCommand(rhinoCmd);
+                    try
+                    {
+                        app.PostCommand(status.LaunchCommand);
+                        if (File.Exists(scriptPath))
+                        {
+                            Process.Start(new ProcessStartInfo(scriptPath) { UseShellExecute = true });
+                        }
+                        return RunResult.Success("Launched Grasshopper via Rhino.Inside.Revit: " + title);
+                    }
+                    catch (Exception ex)
+                    {
+                        return RunResult.Fail("Failed to post Rhino.Inside command: " + ex.Message);
+                    }
+                }
+
+                if (status.IsLoaded)
+                {
                     if (File.Exists(scriptPath))
                     {
                         Process.Start(new ProcessStartInfo(scriptPath) { UseShellExecute = true });
                     }
-                    return RunResult.Success("Launched Rhino.Inside session with " + title);
+                    return RunResult.Success("Dispatched to active Rhino.Inside session: " + title);
                 }
-            }
-            catch { }
 
-            // 2. Check for Standalone Rhino executable (Rhino 8 or Rhino 7)
-            string[] possibleRhinoPaths = new[]
-            {
-                @"C:\Program Files\Rhino 8\System\Rhino.exe",
-                @"C:\Program Files\Rhino 7\System\Rhino.exe",
-                @"C:\Program Files\Rhinoceros 7\System\Rhino.exe"
-            };
-
-            foreach (var rExe in possibleRhinoPaths)
-            {
-                if (File.Exists(rExe))
-                {
-                    var psi = new ProcessStartInfo(rExe);
-                    if (File.Exists(scriptPath))
-                    {
-                        psi.Arguments = $"\"{scriptPath}\"";
-                    }
-                    psi.UseShellExecute = true;
-                    Process.Start(psi);
-                    return RunResult.Success("Launched standalone Rhino: " + title);
-                }
+                // Installed but not yet started
+                return RunResult.Fail(
+                    "Rhino.Inside.Revit is installed, but the Rhino runtime is not currently active.\n\n" +
+                    "Please click the 'Start' button on the Rhinoceros tab in Revit to initialize Rhino.Inside, then run this tool again."
+                );
             }
 
-            // 3. Fallback: If .gh file exists, try default Windows file association
-            if (File.Exists(scriptPath))
-            {
-                Process.Start(new ProcessStartInfo(scriptPath) { UseShellExecute = true });
-                return RunResult.Success("Opened " + Path.GetFileName(scriptPath) + " in default viewer");
-            }
-
-            return RunResult.Fail("Grasshopper definition requires Rhino 7/8 or Rhino.Inside.Revit on this workstation.\n\nFile: " + scriptPath);
+            // 2. Rhino.Inside is NOT detected or installed
+            return RunResult.Fail(
+                "Rhino.Inside.Revit is not detected on this workstation.\n\n" +
+                "Grasshopper (.gh) automations require Rhino.Inside.Revit to stream and synchronize geometry live into Revit.\n\n" +
+                "Please download and install Rhino.Inside.Revit (free for Rhino 7 & 8 license holders) from:\n" +
+                "https://www.rhino3d.com/inside/revit/8/"
+            );
         }
 
         private string ResolvePath(string target)

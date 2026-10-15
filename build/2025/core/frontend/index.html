@@ -33,10 +33,6 @@
       </div>
     </div>
     <div class="flex items-center gap-0.5 shrink-0">
-      <button onclick="toggleSuiteMode()" id="suite-badge-btn" title="Switch between Revit and Rhino tool catalogs" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
-        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
-        <span id="suite-badge-text">Revit</span>
-      </button>
       <button onclick="openRibbonModal()" title="Manage tools pinned to the Revit ribbon" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
         <i data-lucide="pin" class="w-3.5 h-3.5"></i>
         <span id="ribbon-badge-text">2</span>
@@ -110,7 +106,7 @@
           <i data-lucide="star" id="filter-fav-icon" class="w-3 h-3 text-slate-400"></i>
           <span id="fav-count-pill" class="font-mono">0</span>
         </button>
-        <button onclick="toggleShowGhTools()" id="toggle-gh-btn" title="Show Rhino &amp; Grasshopper tools" class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 shrink-0 transition">
+        <button onclick="toggleGhFilter()" id="toggle-gh-btn" title="Filter Grasshopper (.gh) automations" class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 shrink-0 transition">
           <i data-lucide="box" id="toggle-gh-icon" class="w-3 h-3 text-slate-400"></i>
           <span id="toggle-gh-text">GH</span>
         </button>
@@ -714,8 +710,6 @@ let filterPlatform = 'All';
 let filterStatus = 'All';
 let filterSafety = 'All';
 let filterOnlyFavorites = false;
-let showGhTools = localStorage.getItem('bimcc_show_gh') === 'true'; // false by default in Revit mode
-let currentSuite = 'revit'; // 'revit' or 'rhino'
 let favorites = new Set(JSON.parse(localStorage.getItem('bimcc_favorites') || '["bim-health-check", "doc-renumber-doors"]'));
 let ribbonPinnedIds = new Set(JSON.parse(localStorage.getItem('bimcc_ribbon_pinned') || '["bim-health-check", "doc-renumber-doors"]'));
 let currentConfig = {
@@ -841,7 +835,10 @@ function setCategory(c) {
 }
 
 function setFilter(type, val) {
-  if (type === 'platform') filterPlatform = val;
+  if (type === 'platform') {
+    filterPlatform = val;
+    updateGhToggleUI();
+  }
   else if (type === 'status') filterStatus = val;
   else if (type === 'safety') filterSafety = val;
   const sel = document.getElementById(type === 'platform' ? 'sel-platform' : type === 'status' ? 'sel-status' : 'sel-safety');
@@ -896,15 +893,16 @@ function render() {
 
   // Filter tools deterministically
   const filtered = tools.filter(t => {
-    // If in Revit Suite mode and showGhTools is disabled, hide Grasshopper/Rhino tools unless specifically requested via platform filter
-    const isGhTool = t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || t.actionType === 'Rhino' || (t.targetPath && (t.targetPath.endsWith('.gh') || t.targetPath.endsWith('.ghx')));
-    if (currentSuite === 'revit' && !showGhTools && filterPlatform !== 'Grasshopper' && isGhTool) {
-      return false;
-    }
-
     if (filterOnlyFavorites && !favorites.has(t.toolId)) return false;
     if (activeCategory !== 'All' && t.category !== activeCategory) return false;
-    if (filterPlatform !== 'All' && t.actionType !== filterPlatform) return false;
+    if (filterPlatform !== 'All') {
+      if (filterPlatform === 'Grasshopper') {
+        const isGh = t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || t.actionType === 'Rhino' || (t.targetPath && (t.targetPath.endsWith('.gh') || t.targetPath.endsWith('.ghx')));
+        if (!isGh) return false;
+      } else if (t.actionType !== filterPlatform) {
+        return false;
+      }
+    }
     if (filterStatus !== 'All' && (t.status || 'Approved') !== filterStatus) return false;
     if (filterSafety !== 'All' && (t.safetyLevel || 'Modifying') !== filterSafety) return false;
     return matchesSearch(t, query);
@@ -916,8 +914,27 @@ function render() {
     (query ? `Search: "${query}" (${filtered.length} matching)` : `${activeCategory} Tools (${filtered.length})`);
 
   const container = document.getElementById('tools-container');
+  let ghWarningBanner = '';
+  if (filterPlatform === 'Grasshopper' && context.hasRhinoInside === false) {
+    ghWarningBanner = `
+      <div class="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2.5">
+        <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 shrink-0 mt-0.5"></i>
+        <div class="flex-1">
+          <div class="font-bold text-amber-950">Rhino.Inside.Revit Not Detected</div>
+          <p class="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+            Grasshopper (.gh) automations require Rhino.Inside.Revit to exchange live geometry with Revit.
+          </p>
+          <div class="mt-2">
+            <button onclick="openDocLink('https://www.rhino3d.com/inside/revit/8/')" class="bg-amber-600 hover:bg-amber-700 text-white font-medium px-2.5 py-1 rounded text-[11px] inline-flex items-center gap-1 transition shadow-2xs">
+              <i data-lucide="download" class="w-3 h-3"></i>Download Rhino.Inside.Revit
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
   if (filtered.length === 0) {
-    container.innerHTML = `
+    container.innerHTML = ghWarningBanner + `
       <div class="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">
         <i data-lucide="search-x" class="w-8 h-8 mx-auto text-slate-300"></i>
         <p class="font-semibold text-xs mt-2 text-slate-700">No automation matches these criteria.</p>
@@ -932,7 +949,7 @@ function render() {
         </div>
       </div>`;
   } else {
-    container.innerHTML = filtered.map(t => renderToolCard(t)).join('');
+    container.innerHTML = ghWarningBanner + filtered.map(t => renderToolCard(t)).join('');
   }
   updateFavCountPill();
   icons();
@@ -944,6 +961,8 @@ function renderToolCard(t) {
   const outcome = t.intendedOutcome || t.description;
   const isFav = favorites.has(t.toolId);
   const isPinned = ribbonPinnedIds.has(t.toolId);
+  const isGh = t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || (t.targetPath && (t.targetPath.endsWith('.gh') || t.targetPath.endsWith('.ghx')));
+  const needsRhinoInside = isGh && context.hasRhinoInside === false;
 
   return `
     <div class="bg-white rounded-lg border border-slate-200/90 p-3 hover:border-slate-300 hover:shadow-xs transition group">
@@ -956,6 +975,7 @@ function renderToolCard(t) {
             <span class="text-[9px] px-1.5 py-0.2 rounded border ${isReadOnly ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
               ${isReadOnly ? 'Read-Only' : 'Modifies Model'}
             </span>
+            ${needsRhinoInside ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-amber-50 text-amber-800 border-amber-300 font-medium inline-flex items-center gap-1" title="Rhino.Inside.Revit is required on this workstation"><i data-lucide="alert-triangle" class="w-2.5 h-2.5 text-amber-600"></i>Rhino.Inside Required</span>` : ''}
           </div>
           <p class="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">${esc(outcome)}</p>
         </div>
@@ -1001,6 +1021,13 @@ function handleToolRun(toolId) {
   const tool = tools.find(t => t.toolId === toolId);
   if (!tool) return;
 
+  const isGh = tool.actionType === 'Grasshopper' || tool.actionType === 'Rhino.Inside' || (tool.targetPath && (tool.targetPath.endsWith('.gh') || tool.targetPath.endsWith('.ghx')));
+  if (isGh && context.hasRhinoInside === false) {
+    // Missing Rhino.Inside: open preflight check with clear installation guide
+    openPreflightModal(toolId);
+    return;
+  }
+
   // Step 5: Modifying operations MUST show preflight confirmation
   if (tool.safetyLevel === 'Modifying' || !tool.safetyLevel) {
     openPreflightModal(toolId);
@@ -1020,6 +1047,8 @@ function openPreflightModal(toolId) {
   const isVersionCompatible = supportedVers.includes(currentRevitVer);
   const hasDoc = !!context.hasDocument;
   const isModifying = tool.safetyLevel !== 'ReadOnly';
+  const isGh = tool.actionType === 'Grasshopper' || tool.actionType === 'Rhino.Inside' || (tool.targetPath && (tool.targetPath.endsWith('.gh') || tool.targetPath.endsWith('.ghx')));
+  const hasRhinoInside = context.hasRhinoInside !== false;
 
   let html = `
     <!-- Tool Summary Header -->
@@ -1044,6 +1073,20 @@ function openPreflightModal(toolId) {
         </div>
         <span class="font-semibold">${isVersionCompatible ? '✓ Compatible' : '✕ Untested version'}</span>
       </div>
+
+      ${isGh ? `
+      <div class="p-2 rounded border ${hasRhinoInside ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-300 text-amber-900'} flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="${hasRhinoInside ? 'check-circle' : 'alert-triangle'}" class="w-4 h-4 ${hasRhinoInside ? 'text-emerald-600' : 'text-amber-600'}"></i>
+          <div>
+            <span class="font-medium">Rhino.Inside.Revit Runtime</span>
+            ${!hasRhinoInside ? `<div class="text-[10px] text-amber-700">Required for Grasshopper inside Revit</div>` : ''}
+          </div>
+        </div>
+        ${hasRhinoInside 
+          ? `<span class="font-semibold text-emerald-700 text-xs">✓ Ready</span>` 
+          : `<button onclick="openDocLink('https://www.rhino3d.com/inside/revit/8/')" class="text-blue-700 hover:underline font-semibold text-xs flex items-center gap-1">Download &amp; Install<i data-lucide="external-link" class="w-3 h-3"></i></button>`}
+      </div>` : ''}
 
       <div class="p-2 rounded border ${hasDoc ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'} flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -2348,14 +2391,14 @@ async function exportKnowledgeGraphJson() {
 }
 
 // ======================================================================
-//  Rhino & Grasshopper (.gh) Visibility Toggle
+//  Grasshopper (.gh) Filter Toggle
 // ======================================================================
-function toggleShowGhTools() {
-  showGhTools = !showGhTools;
-  localStorage.setItem('bimcc_show_gh', showGhTools ? 'true' : 'false');
-  updateGhToggleUI();
-  toast(showGhTools ? 'Rhino & Grasshopper (.gh) tools visible' : 'Rhino & Grasshopper (.gh) tools hidden');
-  render();
+function toggleGhFilter() {
+  if (filterPlatform === 'Grasshopper') {
+    setFilter('platform', 'All');
+  } else {
+    setFilter('platform', 'Grasshopper');
+  }
 }
 
 function updateGhToggleUI() {
@@ -2364,7 +2407,7 @@ function updateGhToggleUI() {
   const icon = document.getElementById('toggle-gh-icon');
   if (!btn || !txt || !icon) return;
 
-  if (showGhTools || currentSuite === 'rhino') {
+  if (filterPlatform === 'Grasshopper') {
     btn.className = 'px-2 py-1 rounded-md bg-teal-100 text-teal-800 border border-teal-300 font-semibold flex items-center gap-1 text-[11px] shrink-0 transition';
     txt.textContent = 'GH: ON';
     icon.className = 'w-3 h-3 text-teal-600';
@@ -2372,37 +2415,6 @@ function updateGhToggleUI() {
     btn.className = 'px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 text-[11px] shrink-0 transition';
     txt.textContent = 'GH';
     icon.className = 'w-3 h-3 text-slate-400';
-  }
-}
-
-// ======================================================================
-//  Multi-Platform Suite Toggle: Revit vs Rhino
-// ======================================================================
-async function toggleSuiteMode() {
-  currentSuite = (currentSuite === 'revit') ? 'rhino' : 'revit';
-  const label = document.getElementById('suite-badge-text');
-  const btn = document.getElementById('suite-badge-btn');
-  updateGhToggleUI();
-
-  if (currentSuite === 'rhino') {
-    if (label) label.textContent = 'Rhino';
-    if (btn) btn.className = 'text-[11px] font-semibold text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-2 py-1 rounded-md flex items-center gap-1 transition';
-    toast('Switched to Rhino & Grasshopper Catalog');
-    try {
-      const res = await fetch('data/rhino_catalog.json').catch(() => null);
-      if (res && res.ok) {
-        tools = await res.json();
-      } else {
-        const localRes = await fetch('../../../rhino_catalog.json').catch(() => null);
-        if (localRes && localRes.ok) tools = await localRes.json();
-      }
-    } catch (e) {}
-    render();
-  } else {
-    if (label) label.textContent = 'Revit';
-    if (btn) btn.className = 'text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition';
-    toast('Switched to Revit Corporate Catalog');
-    await loadCatalog(true);
   }
 }
 
