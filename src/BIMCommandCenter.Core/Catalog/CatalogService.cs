@@ -53,8 +53,18 @@ namespace BIMCommandCenter.Core.Catalog
 
         public CatalogResult Current => _last;
 
-        public Dictionary<string, object> FindTool(string toolId) =>
-            _last?.Tools.FirstOrDefault(t => string.Equals(t.Str("toolId"), toolId, StringComparison.OrdinalIgnoreCase));
+        public Dictionary<string, object> FindTool(string toolId)
+        {
+            if (_last?.Tools == null) return null;
+            var found = _last.Tools.FirstOrDefault(t => string.Equals(t.Str("toolId"), toolId, StringComparison.OrdinalIgnoreCase));
+            if (found != null) return found;
+
+            return _last.Tools.FirstOrDefault(t =>
+                string.Equals(t.Str("title"), toolId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t.Str("name"), toolId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileNameWithoutExtension(t.Str("targetPath")), toolId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(t.Str("targetPath")), toolId, StringComparison.OrdinalIgnoreCase));
+        }
 
         public async Task<CatalogResult> GetAsync(bool forceRefresh)
         {
@@ -213,7 +223,7 @@ namespace BIMCommandCenter.Core.Catalog
         {
             public string Description { get; set; }
             public string Author { get; set; } = "Central BIM Library";
-            public string PackagesRequired { get; set; } = "None reported";
+            public string PackagesRequired { get; set; } = "None";
             public string SafetyLevel { get; set; } = "Modifying";
             public List<Dictionary<string, object>> Parameters { get; set; } = new List<Dictionary<string, object>>();
         }

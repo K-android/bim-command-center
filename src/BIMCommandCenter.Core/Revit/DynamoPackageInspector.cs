@@ -64,8 +64,12 @@ namespace BIMCommandCenter.Core.Revit
             var result = new DynamoPackageCheckResult();
             if (string.IsNullOrWhiteSpace(packagesRequired) || 
                 packagesRequired.Trim().Equals("None", StringComparison.OrdinalIgnoreCase) ||
+                packagesRequired.Trim().Equals("None reported", StringComparison.OrdinalIgnoreCase) ||
                 packagesRequired.Trim().Equals("None (Native .NET)", StringComparison.OrdinalIgnoreCase) ||
-                packagesRequired.Trim().Equals("None (Standard Revit API)", StringComparison.OrdinalIgnoreCase))
+                packagesRequired.Trim().Equals("None (Standard Revit API)", StringComparison.OrdinalIgnoreCase) ||
+                packagesRequired.Trim().Equals("None (Self-contained)", StringComparison.OrdinalIgnoreCase) ||
+                packagesRequired.Trim().Equals("Self-contained", StringComparison.OrdinalIgnoreCase) ||
+                packagesRequired.Trim().Equals("Built-in", StringComparison.OrdinalIgnoreCase))
             {
                 return result;
             }
@@ -76,6 +80,14 @@ namespace BIMCommandCenter.Core.Revit
             foreach (var rawEntry in entries)
             {
                 string clean = Regex.Replace(rawEntry, @"\(.*?\)", "").Trim();
+                if (clean.Equals("None", StringComparison.OrdinalIgnoreCase) ||
+                    clean.Equals("None reported", StringComparison.OrdinalIgnoreCase) ||
+                    clean.Equals("Self-contained", StringComparison.OrdinalIgnoreCase) ||
+                    clean.Equals("Built-in", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 // Strip common prefixes/suffixes like "for Dynamo 2.x" or "v1.2"
                 string coreName = Regex.Replace(clean, @"\s+for\s+Dynamo.*$", "", RegexOptions.IgnoreCase).Trim();
                 if (string.IsNullOrWhiteSpace(coreName)) continue;

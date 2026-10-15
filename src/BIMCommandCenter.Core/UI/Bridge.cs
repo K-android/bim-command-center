@@ -100,6 +100,13 @@ namespace BIMCommandCenter.Core.UI
                     if (_s.Catalog.Current == null) await _s.Catalog.GetAsync(false);
                     Dictionary<string, object> tool = _s.Catalog.FindTool(toolId);
 
+                    if (tool == null)
+                    {
+                        // Refresh catalog immediately to discover any recently dropped scripts
+                        await _s.Catalog.GetAsync(true);
+                        tool = _s.Catalog.FindTool(toolId);
+                    }
+
                     if (tool == null && string.Equals(toolId, "bim-health-check", StringComparison.OrdinalIgnoreCase))
                     {
                         tool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
@@ -112,6 +119,27 @@ namespace BIMCommandCenter.Core.UI
                             ["safetyLevel"] = "ReadOnly",
                             ["intendedOutcome"] = "Audits model integrity, health score, parameters, warnings, views, and links."
                         };
+                    }
+
+                    if (tool == null)
+                    {
+                        // Direct file resolution fallback if toolId points to or matches a script on disk
+                        string resolved = _s.Runner.ResolvePath(toolId);
+                        if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved))
+                        {
+                            string ext = Path.GetExtension(resolved).ToLowerInvariant();
+                            string actionType = (ext == ".gh" || ext == ".ghx") ? "Grasshopper" : (ext == ".dyn" ? "Dynamo" : (ext == ".py" ? "PyRevit" : "NativeAddin"));
+                            tool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["toolId"] = toolId,
+                                ["title"] = Path.GetFileNameWithoutExtension(resolved),
+                                ["actionType"] = actionType,
+                                ["targetPath"] = resolved,
+                                ["executionMode"] = "Player",
+                                ["safetyLevel"] = "Modifying",
+                                ["packagesRequired"] = "None"
+                            };
+                        }
                     }
 
                     if (tool == null)

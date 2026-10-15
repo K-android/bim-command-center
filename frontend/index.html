@@ -91,7 +91,7 @@
                  class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-8 pr-7 py-1.5 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white">
           <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
         </div>
-        <button onclick="askCopilotFromSearch()" title="Ask Antigravity Librarian" class="p-1.5 rounded-md border border-slate-200 text-amber-500 hover:bg-amber-50 transition">
+        <button onclick="askCopilotFromSearch()" title="Ask Archie (BIM Librarian)" class="p-1.5 rounded-md border border-slate-200 text-amber-500 hover:bg-amber-50 transition">
           <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
         </button>
         <button onclick="openFolder()" id="scripts-folder-btn" title="Open central library folder" class="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 transition">
@@ -166,9 +166,9 @@
     </section>
   </main>
 
-  <!-- VIEW 2: COPILOT (ANTIGRAVITY THE LIBRARIAN) -->
+  <!-- VIEW 2: COPILOT (ARCHIE THE LIBRARIAN) -->
   <main id="view-ai" class="hidden flex-1 flex flex-col min-h-0 bg-white">
-    <!-- Sub-header Antigravity Librarian notice -->
+    <!-- Sub-header Archie Librarian notice -->
     <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 px-3.5 py-2 flex items-center justify-between text-[11px] text-blue-900 shrink-0">
       <div class="flex items-center gap-2">
         <div class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs">
@@ -176,7 +176,7 @@
         </div>
         <div>
           <div class="font-bold flex items-center gap-1.5 leading-tight">
-            <span>Antigravity</span>
+            <span>Archie</span>
             <span class="text-[9px] bg-blue-200/70 text-blue-800 font-semibold px-1.5 py-0.2 rounded-full uppercase tracking-wider">Librarian</span>
           </div>
           <div class="text-[10px] text-blue-700/80">Interactive BIM automation concierge &amp; script librarian</div>
@@ -206,7 +206,7 @@
         <i data-lucide="paperclip" class="w-4 h-4"></i>
         <input type="file" accept=".pdf" class="hidden" onchange="attachPdf(event)">
       </label>
-      <input id="chat-input" type="text" placeholder="Ask Antigravity (e.g. renumber doors, audit CAD, check model health)…" onkeydown="if(event.key==='Enter') sendChat()"
+      <input id="chat-input" type="text" placeholder="Ask Archie (e.g. renumber doors, audit CAD, check model health)…" onkeydown="if(event.key==='Enter') sendChat()"
              class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400">
       <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition shadow-xs">
         <i data-lucide="send" class="w-4 h-4"></i>
@@ -1179,6 +1179,10 @@ function render() {
 function getDynamoMissingPackages(packagesRequired) {
   if (!packagesRequired || 
       packagesRequired === 'None' || 
+      packagesRequired === 'None reported' || 
+      packagesRequired === 'None (Self-contained)' || 
+      packagesRequired === 'Self-contained' || 
+      packagesRequired === 'Built-in' || 
       packagesRequired.includes('Native .NET') || 
       packagesRequired.includes('Standard Revit API') ||
       packagesRequired.includes('Native Revit Command')) {
@@ -1190,7 +1194,7 @@ function getDynamoMissingPackages(packagesRequired) {
 
   for (const raw of entries) {
     const clean = raw.replace(/\(.*?\)/g, '').replace(/\s+for\s+Dynamo.*$/i, '').trim().toLowerCase();
-    if (!clean) continue;
+    if (!clean || clean === 'none' || clean === 'none reported' || clean === 'self-contained' || clean === 'built-in') continue;
     let found = false;
     for (const inst of installedList) {
       if (inst.includes(clean) || clean.includes(inst)) {
@@ -1911,7 +1915,7 @@ async function submitToolForGovernance(e) {
 // ======================================================================
 //  Copilot: Governed AI Router & Response Contract (Blueprint Page 4)
 // ======================================================================
-//  Copilot: Antigravity the BIM Librarian
+//  Copilot: Archie the BIM Librarian
 // ======================================================================
 let chatAttachment = null;
 
@@ -1935,7 +1939,7 @@ function clearChat() {
     <div class="space-y-2">
       <p class="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
         <span class="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-        Greetings! I am Antigravity, your Central BIM Librarian.
+        Greetings! I am Archie, your Central BIM Librarian.
       </p>
       <p class="text-xs text-slate-600 leading-relaxed">
         I curate our firm's verified Central Automation Library. I can help you find approved tools, run Dynamo graphs via Dynamo Player (clean inputs and outputs only), audit model health, or troubleshoot Revit automation workflows.
@@ -2060,7 +2064,7 @@ async function sendChat() {
   const typingId = 'typing_' + Date.now();
   addBot(`<div id="${typingId}" class="flex items-center gap-2 text-slate-400 text-xs">
     <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-    Antigravity is consulting the Central Library…
+    Archie is consulting the Central Library…
   </div>`);
 
   try {
@@ -2072,13 +2076,13 @@ async function sendChat() {
     }
   } catch (err) {
     document.getElementById(typingId)?.remove();
-    addBot(`<p class="text-rose-600 font-semibold">Antigravity Note: ${esc(err.message)}</p>
+    addBot(`<p class="text-rose-600 font-semibold">Archie Note: ${esc(err.message)}</p>
       <p class="text-[11px] text-slate-500 mt-1">Consulting the local Central Library catalog directly:</p>`);
     respondWithLocalRouter(text);
   }
 }
 
-// AI API Call with Antigravity Librarian Persona
+// AI API Call with Archie Librarian Persona
 async function callAiApi(promptText, att, typingId) {
   const eligibleTools = tools.filter(t => (t.status || 'Approved') !== 'Deprecated').map(t => ({
     toolId: t.toolId,
@@ -2091,7 +2095,7 @@ async function callAiApi(promptText, att, typingId) {
     packagesRequired: t.packagesRequired
   }));
 
-  const systemInstructions = `You are Antigravity, the elite Central BIM Automation Librarian & Systems Architect inside Autodesk Revit.
+  const systemInstructions = `You are Archie, the elite Central BIM Automation Librarian & Systems Architect inside Autodesk Revit.
 You are warm, interactive, highly knowledgeable, and concise.
 
 Approved Central Library Tools:
@@ -2103,7 +2107,7 @@ Active Project Context:
 - Installed Dynamo Packages: ${(context.installedDynamoPackages || []).join(', ')}
 
 GUIDELINES:
-1. Speak conversationally as Antigravity the Librarian. Keep your response helpful, concise, and professional.
+1. Speak conversationally as Archie the Librarian. Keep your response helpful, concise, and professional.
 2. For Dynamo (.dyn) graphs, note that they run cleanly via Dynamo Player (inputs & outputs only, no graph editor clutter).
 3. If an approved automation directly solves or assists the user's task, mention it and include this token in your response:
 [TOOL:exact-toolId]
@@ -2257,7 +2261,7 @@ function respondWithLocalRouter(text) {
   // 1. Greetings & Librarian Persona
   if (/^(hi|hello|hey|greetings|morning|afternoon|evening|help|who are you|what can you do)/i.test(lower)) {
     addBot(`
-      <p class="font-semibold text-slate-800">Hello! I am <strong>Antigravity</strong>, your BIM Automation Librarian.</p>
+      <p class="font-semibold text-slate-800">Hello! I am <strong>Archie</strong>, your Central BIM Librarian.</p>
       <p class="text-slate-600 mt-1 leading-relaxed">
         Our central repository contains verified scripts and tools organized into 5 major domains:
       </p>

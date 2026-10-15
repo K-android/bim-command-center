@@ -180,43 +180,81 @@ namespace BIMCommandCenter.Core.Revit
 
         private RunResult RunDynamo(UIApplication app, Dictionary<string, object> tool, string dynPath)
         {
-            if (!File.Exists(dynPath))
-                return RunResult.Fail("Dynamo graph not found:\n" + dynPath + "\n\nVerify that the script is located in the Central Library:\n" + _config.ScriptsRoot);
-
-            var pkgCheck = DynamoPackageInspector.CheckPackages(tool.Str("packagesRequired"));
-            if (pkgCheck.HasMissing)
+            if (string.IsNullOrWhiteSpace(dynPath) || !File.Exists(dynPath))
             {
-                return RunResult.Fail(pkgCheck.Instructions);
+                // Fallback attempt to resolve path from tool targetPath
+                string rawTarget = tool.Str("targetPath");
+                string resolved = ResolvePath(rawTarget);
+                if (File.Exists(resolved))
+                {
+                    dynPath = resolved;
+                }
+                else
+                {
+                    return RunResult.Fail("Dynamo graph not found:\n" + (dynPath ?? rawTarget) + "\n\nVerify that the script is located in the Central Library:\n" + _config.ScriptsRoot);
+                }
             }
 
+            var pkgCheck = DynamoPackageInspector.CheckPackages(tool.Str("packagesRequired"));
             string scriptName = Path.GetFileName(dynPath);
 
-            // Launch Dynamo Player in Revit
+            // User requested: run Dynamo Player which gives inputs and outputs only.
+            // 1. Try launching Dynamo Player in Revit
             string[] candidateIds = new[]
             {
                 "ID_VISUAL_PROGRAMMING_DYNAMOPLAYER",
                 "DynamoPlayer",
-                "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%DynamoPlayer"
+                "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%DynamoPlayer",
+                "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%VisualProgramming_DynamoPlayer"
             };
 
-            RevitCommandId playerCmdId = null;
+            bool playerLaunched = false;
             foreach (var idStr in candidateIds)
             {
                 var cmd = RevitCommandId.LookupCommandId(idStr);
                 if (cmd != null && app.CanPostCommand(cmd))
                 {
-                    playerCmdId = cmd;
-                    break;
+                    try
+                    {
+                        app.PostCommand(cmd);
+                        playerLaunched = true;
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Write("PostCommand failed for " + idStr + ": " + ex.Message);
+                    }
                 }
             }
 
-            if (playerCmdId != null)
+            if (playerLaunched)
             {
-                app.PostCommand(playerCmdId);
-                return RunResult.Success($"Dynamo Player launched.\nSelect \"{scriptName}\" in Dynamo Player to provide inputs and view outputs without opening the node editor.");
+                var res = RunResult.Success($"Dynamo Player launched.\nSelect \"{scriptName}\" in Dynamo Player to configure inputs and review outputs.");
+                if (pkgCheck.HasMissing)
+                {
+                    res.Warnings.Add("Note: Missing package(s) detected: " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
+                }
+                return res;
             }
 
-            return RunResult.Fail("Revit cannot post the Dynamo Player command right now (another dialog or transaction may be active). Please open Dynamo Player from the Manage ribbon tab.");
+            // 2. Seamless fallback: If Revit's ribbon cannot post Dynamo Player (e.g. during external event or ribbon state),
+            // invoke the graph directly via DynamoRevitDS automation API so it ALWAYS executes!
+            try
+            {
+                string mode = tool.Str("executionMode");
+                bool headless = string.Equals(mode, "Headless", StringComparison.OrdinalIgnoreCase);
+
+                var runRes = DynamoRunner.Run(app, dynPath, headless);
+                if (pkgCheck.HasMissing)
+                {
+                    runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing));
+                }
+                return runRes;
+            }
+            catch (Exception ex)
+            {
+                return RunResult.Fail("Could not execute Dynamo graph: " + ex.Message);
+            }
         }
 
         // ---------------- Ribbon buttons (pyRevit + any add-in) ----------------
@@ -342,46 +380,85 @@ namespace BIMCommandCenter.Core.Revit
         public static RunResult Run(UIApplication app, string dynPath, bool headless)
         {
             Assembly dynamoRevit = AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(a => a.GetName().Name == "DynamoRevitDS");
+                .FirstOrDefault(a => a.GetName().Name == "DynamoRevitDS" || a.GetName().Name == "DynamoRevit");
 
             if (dynamoRevit == null)
             {
-                string revitDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
-                string candidate = Path.Combine(revitDir, "AddIns", "DynamoForRevit", "Revit", "DynamoRevitDS.dll");
-                if (!File.Exists(candidate))
-                    return RunResult.Fail("Dynamo for Revit was not found in this Revit installation.");
-                dynamoRevit = Assembly.LoadFrom(candidate);
+                try
+                {
+                    string revitDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName);
+                    string version = app.Application.VersionNumber;
+                    string[] candidates = new[]
+                    {
+                        Path.Combine(revitDir, "AddIns", "DynamoForRevit", "Revit", "DynamoRevitDS.dll"),
+                        Path.Combine(revitDir, "AddIns", "DynamoForRevit", "DynamoRevitDS.dll"),
+                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Autodesk", "Revit " + version, "AddIns", "DynamoForRevit", "Revit", "DynamoRevitDS.dll"),
+                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Autodesk", "Revit", "Addins", version, "DynamoForRevit", "DynamoRevitDS.dll")
+                    };
+                    foreach (var candidate in candidates)
+                    {
+                        if (File.Exists(candidate))
+                        {
+                            dynamoRevit = Assembly.LoadFrom(candidate);
+                            break;
+                        }
+                    }
+                }
+                catch { }
             }
 
-            Type dynType = dynamoRevit.GetType("Dynamo.Applications.DynamoRevit");
-            Type dataType = dynamoRevit.GetType("Dynamo.Applications.DynamoRevitCommandData");
-            if (dynType == null || dataType == null)
-                return RunResult.Fail("This Dynamo version doesn't expose the automation API we use.");
-
-            var journal = new Dictionary<string, string>
+            if (dynamoRevit != null)
             {
-                ["dynPath"] = dynPath,
-                ["dynShowUI"] = headless ? "false" : "true",
-                ["dynAutomation"] = headless ? "true" : "false",
-                ["dynPathExecute"] = headless ? "true" : "false",
-                ["dynModelShutDown"] = headless ? "true" : "false",
-                ["dynForceManualRun"] = headless ? "false" : "true"
-            };
+                Type dynType = dynamoRevit.GetType("Dynamo.Applications.DynamoRevit");
+                Type dataType = dynamoRevit.GetType("Dynamo.Applications.DynamoRevitCommandData");
+                if (dynType != null && dataType != null)
+                {
+                    var journal = new Dictionary<string, string>
+                    {
+                        ["dynPath"] = dynPath,
+                        ["dynShowUI"] = headless ? "false" : "true",
+                        ["dynAutomation"] = headless ? "true" : "false",
+                        ["dynPathExecute"] = headless ? "true" : "false",
+                        ["dynModelShutDown"] = headless ? "true" : "false",
+                        ["dynForceManualRun"] = headless ? "false" : "true"
+                    };
 
-            object data = Activator.CreateInstance(dataType);
-            dataType.GetProperty("Application")?.SetValue(data, app);
-            dataType.GetProperty("JournalData")?.SetValue(data, journal);
+                    object data = Activator.CreateInstance(dataType);
+                    dataType.GetProperty("Application")?.SetValue(data, app);
+                    dataType.GetProperty("JournalData")?.SetValue(data, journal);
 
-            object dynamo = Activator.CreateInstance(dynType);
-            MethodInfo execute = dynType.GetMethod("ExecuteCommand", new[] { dataType });
-            if (execute == null) return RunResult.Fail("Dynamo ExecuteCommand entry point not found.");
+                    object dynamo = Activator.CreateInstance(dynType);
+                    MethodInfo execute = dynType.GetMethod("ExecuteCommand", new[] { dataType });
+                    if (execute != null)
+                    {
+                        object result = execute.Invoke(dynamo, new[] { data });
+                        bool ok = result is Result r ? r == Result.Succeeded : true;
 
-            object result = execute.Invoke(dynamo, new[] { data });
-            bool ok = result is Result r ? r == Result.Succeeded : true;
+                        string name = Path.GetFileNameWithoutExtension(dynPath);
+                        if (!ok) return RunResult.Fail("Dynamo reported a failure running " + name + ".");
+                        return RunResult.Success(headless ? name + " ran successfully." : name + " opened in Dynamo — verify parameters and click Run.");
+                    }
+                }
+            }
 
-            string name = Path.GetFileNameWithoutExtension(dynPath);
-            if (!ok) return RunResult.Fail("Dynamo reported a failure running " + name + ".");
-            return RunResult.Success(headless ? name + " ran successfully." : name + " is open in Dynamo — set the inputs and press Run.");
+            // Fallback 3: Post the standard Dynamo command or open file via shell
+            var dynamoCmd = RevitCommandId.LookupCommandId("ID_VISUAL_PROGRAMMING_DYNAMO");
+            if (dynamoCmd != null && app.CanPostCommand(dynamoCmd))
+            {
+                app.PostCommand(dynamoCmd);
+                return RunResult.Success($"Dynamo opened. Please open \"{Path.GetFileName(dynPath)}\".");
+            }
+
+            // Fallback 4: Launch using Windows shell association
+            try
+            {
+                Process.Start(new ProcessStartInfo(dynPath) { UseShellExecute = true });
+                return RunResult.Success("Opened " + Path.GetFileName(dynPath) + " in Dynamo.");
+            }
+            catch (Exception ex)
+            {
+                return RunResult.Fail("Could not launch Dynamo: " + ex.Message);
+            }
         }
     }
 }
