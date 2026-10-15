@@ -18,158 +18,105 @@
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px] select-none">
 
-  <!-- TOP HEADER -->
-  <header class="bg-slate-900 text-white px-3.5 py-2 flex items-center justify-between gap-2 shrink-0 border-b border-slate-800">
-    <div class="flex items-center gap-2.5 min-w-0">
-      <div class="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center shrink-0 shadow-xs">
-        <i data-lucide="shield-check" class="w-4 h-4 text-white"></i>
+  <!-- TOP HEADER: brand + context on the left, compact icon actions on the right -->
+  <header class="bg-slate-900 text-white px-3 py-2 flex items-center justify-between gap-2 shrink-0">
+    <div class="flex items-center gap-2 min-w-0">
+      <div class="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center shrink-0">
+        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-white"></i>
       </div>
       <div class="min-w-0">
         <div class="font-semibold text-xs leading-tight flex items-center gap-1.5">
           <span>BIM Command Center</span>
-          <span class="text-[9px] bg-blue-500/20 text-blue-300 font-mono px-1 py-0.2 rounded border border-blue-400/30">V2 Control Plane</span>
-          <span id="ai-active-badge" class="hidden text-[9px] bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded border border-emerald-400/30 font-medium">AI Active</span>
+          <span id="ai-active-badge" class="hidden w-1.5 h-1.5 rounded-full bg-emerald-400" title="AI Copilot connected"></span>
         </div>
         <div id="ctx-line" class="text-[10px] text-slate-400 truncate">Connecting to Revit…</div>
       </div>
     </div>
-    <div class="flex items-center gap-1.5">
-      <button onclick="openSettingsModal()" title="Settings, AI Engines & Scripts Folder" class="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded text-xs border border-slate-700 transition">
-        <i data-lucide="settings" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Settings</span>
+    <div class="flex items-center gap-0.5 shrink-0">
+      <button onclick="toggleSuiteMode()" id="suite-badge-btn" title="Switch between Revit and Rhino tool catalogs" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
+        <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+        <span id="suite-badge-text">Revit</span>
       </button>
-      <button onclick="openSubmitModal()" title="Submit automation for governance review" class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white font-medium px-2 py-1 rounded text-xs transition shadow-2xs">
-        <i data-lucide="plus" class="w-3.5 h-3.5"></i><span class="hidden sm:inline">Submit Tool</span>
+      <button onclick="openRibbonModal()" title="Manage tools pinned to the Revit ribbon" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
+        <i data-lucide="pin" class="w-3.5 h-3.5"></i>
+        <span id="ribbon-badge-text">2</span>
+      </button>
+      <button onclick="openRegisterModal()" title="Register a script or add-in" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+      </button>
+      <button onclick="loadCatalog(true)" title="Refresh catalog" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+      </button>
+      <button onclick="openSettingsModal()" title="Settings" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+        <i data-lucide="settings" class="w-3.5 h-3.5"></i>
       </button>
     </div>
   </header>
 
-  <!-- NAVIGATION TABS: Tools | Copilot | Activity (Blueprint Page 7) -->
-  <nav class="bg-white border-b border-slate-200 px-3 flex items-center gap-1 shrink-0">
-    <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700 flex items-center gap-1.5">
-      <i data-lucide="grid-2x2" class="w-3.5 h-3.5"></i>Tools
+  <!-- NAVIGATION TABS -->
+  <nav class="bg-white border-b border-slate-200 px-2 flex items-center gap-1 shrink-0">
+    <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700">Tools</button>
+    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800">Copilot</button>
+    <button id="tab-activity" onclick="switchTab('activity')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1">
+      Activity
+      <span id="activity-count" class="hidden text-[9px] bg-slate-100 text-slate-600 px-1 rounded-full font-mono">0</span>
     </button>
-    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5">
-      <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>Copilot
-    </button>
-    <button id="tab-activity" onclick="switchTab('activity')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5">
-      <i data-lucide="history" class="w-3.5 h-3.5 text-slate-400"></i>Activity
-      <span id="activity-count" class="hidden text-[9px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded-full font-mono">0</span>
-    </button>
-    <div class="flex-1"></div>
-    <div class="flex items-center gap-1.5">
-      <!-- Suite Switcher: Revit vs Rhino -->
-      <button onclick="toggleSuiteMode()" id="suite-badge-btn" title="Toggle between Revit and Rhino & Grasshopper tool catalogs" class="text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-md flex items-center gap-1 transition">
-        <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-600"></i>
-        <span id="suite-badge-text">Revit Suite</span>
-      </button>
-
-      <!-- Ribbon Tools Manager -->
-      <button onclick="openRibbonModal()" title="Manage tools pinned to your personal Revit Ribbon panel" class="text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-md flex items-center gap-1 transition">
-        <i data-lucide="pin" class="w-3.5 h-3.5 text-amber-600"></i>
-        <span id="ribbon-badge-text">Ribbon (2)</span>
-      </button>
-
-      <!-- Register Tool -->
-      <button onclick="openRegisterModal()" title="Register a new script or add-in to the central library" class="text-[11px] font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded-md flex items-center gap-1 shadow-2xs transition">
-        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-        <span>Register Tool</span>
-      </button>
-
-      <button onclick="loadCatalog(true)" title="Refresh catalog and scan central folder" class="text-slate-400 hover:text-slate-700 p-1.5 rounded transition">
-        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-      </button>
-    </div>
   </nav>
 
   <div id="banner" class="hidden bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-2"></div>
 
-  <!-- VIEW 1: TOOLS (CATALOG & GOVERNANCE BROWSER) -->
+  <!-- VIEW 1: TOOLS -->
   <main id="view-tools" class="flex-1 overflow-y-auto scroll flex flex-col">
-    <!-- HERO SECTION (Collapsible for increased tool density - Blueprint Page 2) -->
-    <section id="hero-section" class="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white px-4 pt-3.5 pb-4 transition-all duration-200 shrink-0">
-      <div class="flex items-center justify-between">
-        <h1 class="text-xs font-bold tracking-wide uppercase text-slate-200 flex items-center gap-1.5">
-          <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-400"></i>
-          <span>Enterprise Automation Control Plane</span>
-        </h1>
-        <button onclick="toggleHeroDensity()" id="hero-toggle-btn" class="text-[11px] text-slate-300 hover:text-white flex items-center gap-0.5">
-          <span id="hero-toggle-text">Compact</span>
-          <i data-lucide="chevron-up" id="hero-toggle-icon" class="w-3 h-3"></i>
+    <!-- SEARCH + FILTERS -->
+    <section class="bg-white border-b border-slate-200 px-3 py-2.5 shrink-0 space-y-2">
+      <div class="flex items-center gap-1.5">
+        <div class="relative flex-1">
+          <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400"></i>
+          <input id="search" type="text" oninput="render()" placeholder="Search tools…"
+                 class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-8 pr-7 py-1.5 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white">
+          <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+        </div>
+        <button onclick="askCopilotFromSearch()" title="Ask Copilot to recommend a tool" class="p-1.5 rounded-md border border-slate-200 text-amber-500 hover:bg-amber-50 transition">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="openFolder()" id="scripts-folder-btn" title="Open central library folder" class="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 transition">
+          <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
         </button>
       </div>
-      <p id="hero-subtext" class="text-[11px] text-slate-300 mt-0.5">Search approved corporate automations or browse by capability domain.</p>
-      
-      <div class="relative mt-2">
-        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
-        <input id="search" type="text" oninput="render()" placeholder="Search by intent, outcome, tag, or author (e.g. renumber doors, health audit, CAD purge)…"
-               class="w-full bg-white text-slate-900 pl-9 pr-8 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm">
-        <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
-      </div>
 
-      <div class="flex items-center justify-between mt-2 text-[10px] text-slate-300">
-        <button onclick="askCopilotFromSearch()" class="hover:text-blue-200 inline-flex items-center gap-1 font-medium text-amber-300">
-          <i data-lucide="sparkles" class="w-3 h-3"></i>Ask Copilot to recommend an approved tool
-        </button>
-        <button onclick="openFolder()" class="hover:text-white inline-flex items-center gap-1">
-          <i data-lucide="folder-open" class="w-3 h-3"></i><span id="scripts-folder-label">Open Central Library</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- DETERMINISTIC FILTER BAR (Blueprint Page 2 & 4) -->
-    <section class="bg-white border-b border-slate-200 px-3 py-2 shrink-0 space-y-2">
-      <!-- Filter Row 1: Platform & Trust Status -->
-      <div class="flex items-center gap-2 overflow-x-auto scroll pb-0.5">
-        <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">Platform:</span>
-        <div id="filter-platform" class="flex items-center gap-1 text-[11px] shrink-0">
-          <button onclick="setFilter('platform', 'All')" class="f-plat px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-semibold" data-val="All">All</button>
-          <button onclick="setFilter('platform', 'Dynamo')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="Dynamo">Dynamo</button>
-          <button onclick="setFilter('platform', 'PyRevit')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="PyRevit">pyRevit</button>
-          <button onclick="setFilter('platform', 'NativeAddin')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="NativeAddin">Add-in</button>
-          <button onclick="setFilter('platform', 'PostableCommand')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="PostableCommand">Revit Native</button>
-          <button onclick="setFilter('platform', 'Grasshopper')" class="f-plat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="Grasshopper">Grasshopper</button>
-        </div>
-
-        <span class="text-slate-300">|</span>
-
-        <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">Trust State:</span>
-        <div id="filter-status" class="flex items-center gap-1 text-[11px] shrink-0">
-          <button onclick="setFilter('status', 'All')" class="f-stat px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-semibold" data-val="All">All</button>
-          <button onclick="setFilter('status', 'Approved')" class="f-stat px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100" data-val="Approved">✓ Approved</button>
-          <button onclick="setFilter('status', 'Pilot')" class="f-stat px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100" data-val="Pilot">⚗ Pilot</button>
-          <button onclick="setFilter('status', 'Restricted')" class="f-stat px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100" data-val="Restricted">🔒 Restricted</button>
-          <button onclick="setFilter('status', 'Draft')" class="f-stat px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200" data-val="Draft">Draft</button>
-        </div>
-
-        <span class="text-slate-300">|</span>
-
-        <span class="text-[10px] uppercase font-bold text-slate-400 shrink-0">Impact:</span>
-        <div id="filter-safety" class="flex items-center gap-1 text-[11px] shrink-0">
-          <button onclick="setFilter('safety', 'All')" class="f-safe px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-semibold" data-val="All">All</button>
-          <button onclick="setFilter('safety', 'ReadOnly')" class="f-safe px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100" data-val="ReadOnly">Read-Only</button>
-          <button onclick="setFilter('safety', 'Modifying')" class="f-safe px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" data-val="Modifying">Modifies Model</button>
-        </div>
-
-        <span class="text-slate-300">|</span>
-
-        <!-- Favorites Quick Filter -->
-        <button onclick="toggleFilterFavorites()" id="filter-fav-btn" class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 text-[11px] shrink-0 transition" title="Show only your favorite pinned tools">
+      <div class="flex items-center gap-1.5 text-[11px] overflow-x-auto scroll">
+        <select id="sel-platform" onchange="setFilter('platform', this.value)" class="bg-white border border-slate-200 rounded-md px-1.5 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <option value="All">All platforms</option>
+          <option value="Dynamo">Dynamo</option>
+          <option value="PyRevit">pyRevit</option>
+          <option value="NativeAddin">Add-in</option>
+          <option value="PostableCommand">Revit Native</option>
+          <option value="Grasshopper">Grasshopper</option>
+        </select>
+        <select id="sel-status" onchange="setFilter('status', this.value)" class="bg-white border border-slate-200 rounded-md px-1.5 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <option value="All">Any status</option>
+          <option value="Approved">Approved</option>
+          <option value="Pilot">Pilot</option>
+          <option value="Restricted">Restricted</option>
+          <option value="Draft">Draft</option>
+        </select>
+        <select id="sel-safety" onchange="setFilter('safety', this.value)" class="bg-white border border-slate-200 rounded-md px-1.5 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <option value="All">Any impact</option>
+          <option value="ReadOnly">Read-only</option>
+          <option value="Modifying">Modifies model</option>
+        </select>
+        <div class="flex-1"></div>
+        <button onclick="toggleFilterFavorites()" id="filter-fav-btn" title="Show favorites only" class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 shrink-0 transition">
           <i data-lucide="star" id="filter-fav-icon" class="w-3 h-3 text-slate-400"></i>
-          <span>Favorites</span>
-          <span id="fav-count-pill" class="text-[9px] bg-slate-200 text-slate-700 px-1 rounded-full font-mono">0</span>
+          <span id="fav-count-pill" class="font-mono">0</span>
         </button>
-
-        <span class="text-slate-300">|</span>
-
-        <!-- Computational / Rhino.GH Visibility Toggle -->
-        <button onclick="toggleShowGhTools()" id="toggle-gh-btn" class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 text-[11px] shrink-0 transition" title="Toggle visibility of Rhino & Grasshopper computational tools (.gh)">
+        <button onclick="toggleShowGhTools()" id="toggle-gh-btn" title="Show Rhino &amp; Grasshopper tools" class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 shrink-0 transition">
           <i data-lucide="box" id="toggle-gh-icon" class="w-3 h-3 text-slate-400"></i>
-          <span id="toggle-gh-text">Rhino / GH Tools: Off</span>
+          <span id="toggle-gh-text">GH</span>
         </button>
       </div>
 
-      <!-- Filter Row 2: Category Pills -->
-      <div id="category-pills" class="flex items-center gap-1.5 overflow-x-auto scroll text-xs pt-1"></div>
+      <div id="category-pills" class="flex items-center gap-1.5 overflow-x-auto scroll text-xs"></div>
     </section>
 
     <!-- TOOL CARDS LIST (High density, structured cards - Blueprint Page 2) -->
@@ -834,7 +781,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     const cfg = await Bridge.call('getConfig');
     if (cfg && cfg.scriptsRoot) {
       currentConfig.scriptsRoot = cfg.scriptsRoot;
-      document.getElementById('scripts-folder-label').textContent = 'Folder: ' + (cfg.scriptsRoot.split('\\').pop() || 'Scripts');
+      const fb = document.getElementById('scripts-folder-btn');
+      if (fb) fb.title = 'Open central library: ' + cfg.scriptsRoot;
     }
   } catch (e) {}
 
@@ -893,38 +841,17 @@ function setCategory(c) {
 }
 
 function setFilter(type, val) {
-  if (type === 'platform') {
-    filterPlatform = val;
-    document.querySelectorAll('.f-plat').forEach(b => {
-      const on = b.dataset.val === val;
-      b.className = `f-plat px-2 py-0.5 rounded-md font-semibold transition ${on ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
-    });
-  } else if (type === 'status') {
-    filterStatus = val;
-    document.querySelectorAll('.f-stat').forEach(b => {
-      const on = b.dataset.val === val;
-      b.className = `f-stat px-2 py-0.5 rounded-md font-semibold transition ${on ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
-    });
-  } else if (type === 'safety') {
-    filterSafety = val;
-    document.querySelectorAll('.f-safe').forEach(b => {
-      const on = b.dataset.val === val;
-      b.className = `f-safe px-2 py-0.5 rounded-md font-semibold transition ${on ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
-    });
-  }
+  if (type === 'platform') filterPlatform = val;
+  else if (type === 'status') filterStatus = val;
+  else if (type === 'safety') filterSafety = val;
+  const sel = document.getElementById(type === 'platform' ? 'sel-platform' : type === 'status' ? 'sel-status' : 'sel-safety');
+  if (sel && sel.value !== val) sel.value = val;
   render();
 }
 
 function clearSearch() {
   document.getElementById('search').value = '';
   render();
-}
-
-function toggleHeroDensity() {
-  heroCollapsed = !heroCollapsed;
-  document.getElementById('hero-subtext').classList.toggle('hidden', heroCollapsed);
-  document.getElementById('hero-toggle-text').textContent = heroCollapsed ? 'Expand' : 'Compact';
-  document.getElementById('hero-toggle-icon').style.transform = heroCollapsed ? 'rotate(180deg)' : '';
 }
 
 // Natural language & multi-field search matcher (Blueprint Page 2)
@@ -1011,69 +938,56 @@ function render() {
   icons();
 }
 
-// Recommended Tool Card Implementation (Blueprint Page 2)
 function renderToolCard(t) {
   const [platLabel, platCls] = PLATFORM_BADGE[t.actionType] || [t.actionType, 'bg-slate-100 text-slate-700 border-slate-200'];
-  const [statLabel, statCls] = STATUS_BADGE[t.status || 'Approved'] || ['Approved', 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold'];
   const isReadOnly = t.safetyLevel === 'ReadOnly';
-  const owner = t.owningTeam || t.author || 'BIM Team';
-  const tested = t.lastTestedDate || `Revit ${(t.revitVersions || ['2026']).join('/')}`;
-  const deps = t.packagesRequired || t.dependencies || 'None';
-  const impact = t.affectedData || (isReadOnly ? 'Read-only analysis' : 'Modifies model elements');
   const outcome = t.intendedOutcome || t.description;
   const isFav = favorites.has(t.toolId);
   const isPinned = ribbonPinnedIds.has(t.toolId);
 
   return `
-    <div class="bg-white rounded-xl border border-slate-200 p-3.5 hover:border-slate-300 hover:shadow-xs transition space-y-2.5">
-      <!-- Row 1: Title, Platform, Trust Status, Safety & Favorite Star -->
-      <div class="flex items-start justify-between gap-2">
-        <div class="flex-1 min-w-0">
-          <div class="font-bold text-slate-900 text-[13px] leading-tight flex items-center gap-1.5 flex-wrap">
-            <span>${esc(t.title)}</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded border ${platCls}">${platLabel}</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded border ${statCls}">${statLabel}</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded border ${isReadOnly ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
-              ${isReadOnly ? '🛡 Read-Only' : '⚡ Modifying'}
+    <div class="bg-white rounded-lg border border-slate-200/90 p-3 hover:border-slate-300 hover:shadow-xs transition group">
+      <div class="flex items-start justify-between gap-2.5">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-semibold text-slate-900 text-xs tracking-tight">${esc(t.title)}</span>
+            <span class="text-[9px] px-1.5 py-0.2 rounded border ${platCls} font-mono">${platLabel}</span>
+            ${t.status && t.status !== 'Approved' ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-blue-50 text-blue-700 border-blue-200">${esc(t.status)}</span>` : ''}
+            <span class="text-[9px] px-1.5 py-0.2 rounded border ${isReadOnly ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
+              ${isReadOnly ? 'Read-Only' : 'Modifies Model'}
             </span>
           </div>
-          <p class="text-[11.5px] text-slate-600 mt-1 leading-snug">${esc(outcome)}</p>
+          <p class="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">${esc(outcome)}</p>
         </div>
-        <button type="button" onclick="toggleFavorite('${esc(t.toolId)}', event)" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" class="p-1 rounded hover:bg-amber-50 text-slate-300 hover:text-amber-500 transition shrink-0">
-          <i data-lucide="star" class="w-4 h-4 ${isFav ? 'text-amber-500 fill-amber-500' : ''}"></i>
-        </button>
+        
+        <div class="flex items-center gap-0.5 shrink-0">
+          <button type="button" onclick="toggleRibbonPin('${esc(t.toolId)}', event)" title="${isPinned ? 'Pinned to Ribbon (Slot Active)' : 'Pin to Revit Quick Tools Ribbon'}" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-amber-600 transition">
+            <i data-lucide="pin" class="w-3.5 h-3.5 ${isPinned ? 'text-amber-500 fill-amber-500' : ''}"></i>
+          </button>
+          <button type="button" onclick="toggleFavorite('${esc(t.toolId)}', event)" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" class="p-1 rounded hover:bg-amber-50 text-slate-300 hover:text-amber-500 transition">
+            <i data-lucide="star" class="w-3.5 h-3.5 ${isFav ? 'text-amber-500 fill-amber-500' : ''}"></i>
+          </button>
+        </div>
       </div>
 
-      <!-- Row 2: Structured Metadata Grid (Owner, Tested, Dependency, Impact) -->
-      <div class="bg-slate-50/80 rounded-lg p-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] border border-slate-100">
-        <div class="truncate"><span class="text-slate-400 font-medium">Owner:</span> <span class="font-semibold text-slate-700">${esc(owner)}</span></div>
-        <div class="truncate"><span class="text-slate-400 font-medium">Tested:</span> <span class="text-slate-700">${esc(tested)}</span></div>
-        <div class="truncate"><span class="text-slate-400 font-medium">Dependency:</span> <span class="text-slate-700 font-mono text-[10px]">${esc(deps)}</span></div>
-        <div class="truncate"><span class="text-slate-400 font-medium">Impact:</span> <span class="text-slate-700">${esc(impact)}</span></div>
-      </div>
-
-      <!-- Row 3: Action Buttons (Run, Preview inputs, Details, Pin to Ribbon, Docs) -->
-      <div class="flex items-center justify-between pt-0.5">
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <button onclick="handleToolRun('${esc(t.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-md text-xs inline-flex items-center gap-1.5 shadow-2xs transition">
-            <i data-lucide="play" class="w-3.5 h-3.5"></i>Run
+      <div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <button onclick="handleToolRun('${esc(t.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-2.5 py-1 rounded text-[11px] inline-flex items-center gap-1 transition shadow-2xs">
+            <i data-lucide="play" class="w-3 h-3"></i>Run
           </button>
-          <button onclick="openPreflightModal('${esc(t.toolId)}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-2.5 py-1.5 rounded-md text-xs inline-flex items-center gap-1 transition">
-            <i data-lucide="list-checks" class="w-3.5 h-3.5 text-slate-500"></i>Preview inputs
+          <button onclick="openPreflightModal('${esc(t.toolId)}')" class="bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded text-[11px] inline-flex items-center gap-1 transition">
+            <i data-lucide="sliders" class="w-3 h-3 text-slate-400"></i>Options
           </button>
-          <button onclick="openDetailsModal('${esc(t.toolId)}')" class="text-slate-600 hover:text-slate-900 font-medium px-2 py-1.5 rounded-md text-xs transition">
+          <button onclick="openDetailsModal('${esc(t.toolId)}')" class="text-slate-500 hover:text-slate-800 px-1.5 py-1 rounded text-[11px] transition">
             Details
           </button>
-          <button onclick="toggleRibbonPin('${esc(t.toolId)}', event)" title="Toggle pin to Revit ribbon 'My Quick Tools'" class="text-[11px] px-2 py-1.5 rounded-md font-medium inline-flex items-center gap-1 transition ${isPinned ? 'bg-amber-100 text-amber-800 border border-amber-300 font-semibold' : 'text-slate-500 hover:bg-slate-100 border border-transparent'}">
-            <i data-lucide="pin" class="w-3 h-3 ${isPinned ? 'text-amber-600 fill-amber-600' : ''}"></i>
-            <span>${isPinned ? 'On Ribbon' : 'Pin'}</span>
-          </button>
         </div>
 
-        <div>
+        <div class="text-[10px] text-slate-400 font-mono flex items-center gap-2">
+          ${t.version ? `<span>${esc(t.version)}</span>` : ''}
           ${t.documentationUrl ? `
-            <a href="javascript:void(0)" onclick="openDocLink('${esc(t.documentationUrl)}')" class="text-[11px] text-blue-600 hover:underline flex items-center gap-0.5">
-              <span>Docs</span> <i data-lucide="external-link" class="w-3 h-3"></i>
+            <a href="javascript:void(0)" onclick="openDocLink('${esc(t.documentationUrl)}')" class="text-blue-600 hover:underline inline-flex items-center gap-0.5">
+              <span>Docs</span><i data-lucide="external-link" class="w-2.5 h-2.5"></i>
             </a>` : ''}
         </div>
       </div>
@@ -2270,7 +2184,7 @@ async function toggleRibbonPin(toolId, event) {
 
 function updateRibbonBadgeText() {
   const el = document.getElementById('ribbon-badge-text');
-  if (el) el.textContent = `Ribbon (${ribbonPinnedIds.size})`;
+  if (el) el.textContent = `${ribbonPinnedIds.size}`;
 }
 
 // ======================================================================
@@ -2451,12 +2365,12 @@ function updateGhToggleUI() {
   if (!btn || !txt || !icon) return;
 
   if (showGhTools || currentSuite === 'rhino') {
-    btn.className = 'px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 border border-teal-300 font-semibold flex items-center gap-1 text-[11px] shrink-0 transition';
-    txt.textContent = 'Rhino / GH Tools: ON';
+    btn.className = 'px-2 py-1 rounded-md bg-teal-100 text-teal-800 border border-teal-300 font-semibold flex items-center gap-1 text-[11px] shrink-0 transition';
+    txt.textContent = 'GH: ON';
     icon.className = 'w-3 h-3 text-teal-600';
   } else {
-    btn.className = 'px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 text-[11px] shrink-0 transition';
-    txt.textContent = 'Rhino / GH Tools: Off';
+    btn.className = 'px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 text-[11px] shrink-0 transition';
+    txt.textContent = 'GH';
     icon.className = 'w-3 h-3 text-slate-400';
   }
 }
@@ -2471,9 +2385,9 @@ async function toggleSuiteMode() {
   updateGhToggleUI();
 
   if (currentSuite === 'rhino') {
-    label.textContent = 'Rhino Suite';
-    btn.className = 'text-[11px] font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2 py-1 rounded-md flex items-center gap-1 transition';
-    toast('Switched to Rhino & Grasshopper Computational Catalog');
+    if (label) label.textContent = 'Rhino';
+    if (btn) btn.className = 'text-[11px] font-semibold text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-2 py-1 rounded-md flex items-center gap-1 transition';
+    toast('Switched to Rhino & Grasshopper Catalog');
     try {
       const res = await fetch('data/rhino_catalog.json').catch(() => null);
       if (res && res.ok) {
@@ -2485,12 +2399,13 @@ async function toggleSuiteMode() {
     } catch (e) {}
     render();
   } else {
-    label.textContent = 'Revit Suite';
-    btn.className = 'text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-md flex items-center gap-1 transition';
+    if (label) label.textContent = 'Revit';
+    if (btn) btn.className = 'text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition';
     toast('Switched to Revit Corporate Catalog');
     await loadCatalog(true);
   }
 }
+
 
 // ======================================================================
 //  Keyboard Shortcuts Listener
