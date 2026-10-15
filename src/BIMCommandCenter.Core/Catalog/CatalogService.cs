@@ -171,6 +171,13 @@ namespace BIMCommandCenter.Core.Catalog
                         }
                     }
 
+                    // If folder structure did not specify a domain category (e.g. script is in root or in Dynamo/ directly),
+                    // intelligently auto-classify based on the script name keywords (e.g. Auto DIM -> Documentation)
+                    if (string.Equals(category, "Central Library", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(category))
+                    {
+                        category = InferCategoryFromName(baseName);
+                    }
+
                     if (existing.Contains(file) || existing.Contains(fileName)) continue;
 
                     string targetPath = file;
@@ -617,5 +624,35 @@ namespace BIMCommandCenter.Core.Catalog
                 List<string> versions = t.StrList("revitVersions");
                 return versions.Count == 0 || versions.Any(v => v.Contains(_revitYear));
             }).ToList();
+        /// <summary>
+        /// Intelligently categorizes a script based on filename / title keywords when not explicitly specified by a folder.
+        /// </summary>
+        public static string InferCategoryFromName(string fileNameOrTitle)
+        {
+            if (string.IsNullOrWhiteSpace(fileNameOrTitle)) return "Documentation";
+            string lower = fileNameOrTitle.ToLowerInvariant();
+
+            // Quality & QA
+            if (Regex.IsMatch(lower, @"\b(audit|health|check|checker|qa|qc|warning|warnings|clash|clashes|hygiene|compliance|validate|validation|corrupt)\b", RegexOptions.IgnoreCase))
+                return "Quality & QA";
+
+            // Documentation & Annotations
+            if (Regex.IsMatch(lower, @"\b(dim|dims|dimension|dimensions|tag|tags|text|sheet|sheets|view|views|schedule|schedules|door|doors|room|rooms|number|renumber|renumbering|mark|marks|export|pdf|dwg|nwc|ifc|titleblock|annotation|annotations|keynote|keynotes|revision|revisions|legend|legends)\b", RegexOptions.IgnoreCase))
+                return "Documentation";
+
+            // Model Maintenance
+            if (Regex.IsMatch(lower, @"\b(purge|cad|unused|unplaced|redundant|workset|worksets|sync|compact|cleanup|clean|maintenance|link|links|import|imports)\b", RegexOptions.IgnoreCase))
+                return "Model Maintenance";
+
+            // Modeling & Geometry
+            if (Regex.IsMatch(lower, @"\b(wall|walls|floor|floors|column|columns|beam|beams|slab|slabs|family|families|geometry|mass|facade|grid|grids|level|levels|railing|railings|stair|stairs|roof|roofs|join|split|ceiling|ceilings|curtain|framing|structure|structural|mep|pipe|pipes|duct|ducts|conduit|conduits|electrical|plumbing|hvac)\b", RegexOptions.IgnoreCase))
+                return "Modeling";
+
+            // Computational
+            if (Regex.IsMatch(lower, @"\b(computational|parametric|algorithm|voronoi|attractor|mesh|panel|paneling|generative|math|pattern|solar|analysis)\b", RegexOptions.IgnoreCase))
+                return "Computational";
+
+            return "Documentation";
+        }
     }
 }

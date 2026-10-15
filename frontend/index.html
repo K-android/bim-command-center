@@ -948,7 +948,7 @@ const CATEGORY_DEFINITIONS = [
   {
     id: 'Documentation',
     title: 'Documentation',
-    subtitle: 'Renumbering, sheets, marks & tags',
+    subtitle: 'Dimensions, tags, sheets & marks',
     icon: 'file-text',
     radialBg: 'bg-blue-500',
     iconBg: 'bg-blue-100',
@@ -956,12 +956,25 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-blue-50',
     pillText: 'text-blue-700',
     borderHover: 'hover:border-blue-400',
-    match: (t) => t.category === 'Documentation' || t.category === 'Documentation & Sheets' || (t.tags && (t.tags.includes('documentation') || t.tags.includes('doors')))
+    match: (t) => t.category === 'Documentation' || t.category === 'Documentation & Sheets' || (t.tags && (t.tags.includes('documentation') || t.tags.includes('doors') || t.tags.includes('dim') || t.tags.includes('sheet')))
+  },
+  {
+    id: 'Modeling',
+    title: 'Modeling & Geometry',
+    subtitle: 'Walls, floors, families & MEP',
+    icon: 'box',
+    radialBg: 'bg-indigo-500',
+    iconBg: 'bg-indigo-100',
+    iconColor: 'text-indigo-700',
+    pillBg: 'bg-indigo-50',
+    pillText: 'text-indigo-700',
+    borderHover: 'hover:border-indigo-400',
+    match: (t) => t.category === 'Modeling' || t.category === 'Modeling & Geometry' || (t.tags && (t.tags.includes('modeling') || t.tags.includes('geometry') || t.tags.includes('walls') || t.tags.includes('floors')))
   },
   {
     id: 'Computational',
     title: 'Computational',
-    subtitle: 'Dynamo Player & Grasshopper',
+    subtitle: 'Parametric, algorithms & generative',
     icon: 'cpu',
     radialBg: 'bg-purple-500',
     iconBg: 'bg-purple-100',
@@ -969,7 +982,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-purple-50',
     pillText: 'text-purple-700',
     borderHover: 'hover:border-purple-400',
-    match: (t) => t.category === 'Computational' || t.actionType === 'Dynamo' || t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || (t.tags && t.tags.includes('dynamo'))
+    match: (t) => t.category === 'Computational' || (t.category === 'Central Library' && (t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside')) || (t.tags && (t.tags.includes('computational') || t.tags.includes('algorithm') || t.tags.includes('parametric')))
   },
   {
     id: 'Quality',

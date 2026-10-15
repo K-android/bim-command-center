@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using BIMCommandCenter.Core.Infrastructure;
@@ -199,6 +200,17 @@ namespace BIMCommandCenter.Core.Revit
             string scriptName = Path.GetFileName(dynPath);
 
             // User requested: run Dynamo Player which gives inputs and outputs only.
+            // Ensure folder is registered in DynamoSettings.xml so Dynamo Player displays it immediately
+            try
+            {
+                string scriptDir = Path.GetDirectoryName(dynPath);
+                DynamoPlayerHelper.EnsureFolderInDynamoSettings(scriptDir, "Central Library");
+            }
+            catch (Exception ex)
+            {
+                Log.Write("EnsureFolderInDynamoSettings failed: " + ex.Message);
+            }
+
             // 1. Try launching Dynamo Player in Revit (Revit's internal ID is ID_PLAYLIST_DYNAMO)
             string[] candidateIds = new[]
             {
@@ -235,7 +247,11 @@ namespace BIMCommandCenter.Core.Revit
 
             if (playerLaunched)
             {
-                var res = RunResult.Success($"Dynamo Player launched.\nSelect \"{scriptName}\" in Dynamo Player to configure inputs and review outputs without opening the node editor.");
+                // Asynchronously send POST /graph/open to Dynamo Player's local REST server
+                // so it directly navigates to this script and opens its inputs and outputs
+                _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
+
+                var res = RunResult.Success($"Dynamo Player opened \"{scriptName}\".\nConfigure inputs and review outputs in Dynamo Player without opening the node editor.");
                 if (pkgCheck.HasMissing)
                 {
                     res.Warnings.Add("Note: Missing package(s) detected: " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
