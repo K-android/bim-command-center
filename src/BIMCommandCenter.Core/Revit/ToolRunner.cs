@@ -158,6 +158,15 @@ namespace BIMCommandCenter.Core.Revit
             {
                 string inScripts = Path.Combine(_config.ScriptsRoot, target.TrimStart('\\', '/'));
                 if (File.Exists(inScripts)) return inScripts;
+
+                // Also check categorized subfolders if target is a simple filename or relative path
+                string fileName = Path.GetFileName(target);
+                string[] subfolders = new[] { "Dynamo", "PyRevit", "Custom Addins", "Grasshopper", "Rhino" };
+                foreach (var sub in subfolders)
+                {
+                    string inSub = Path.Combine(_config.ScriptsRoot, sub, fileName);
+                    if (File.Exists(inSub)) return inSub;
+                }
             }
 
             // 2. Check bundled core folder
@@ -172,39 +181,16 @@ namespace BIMCommandCenter.Core.Revit
         private RunResult RunDynamo(UIApplication app, Dictionary<string, object> tool, string dynPath)
         {
             if (!File.Exists(dynPath))
-                return RunResult.Fail("Dynamo graph not found:\n" + dynPath + "\n\nCheck that the scripts folder is synced on this PC.");
+                return RunResult.Fail("Dynamo graph not found:\n" + dynPath + "\n\nVerify that the script is located in the Central Library:\n" + _config.ScriptsRoot);
 
-            List<string> missing = FindMissingPackages(tool.Str("packagesRequired"));
-            if (missing.Count > 0)
-                return RunResult.Fail("Missing Dynamo package(s): " + string.Join(", ", missing) +
-                                      ".\nInstall them via Dynamo > Packages, or ask the BIM team to add them to the synced packages folder.");
+            var pkgCheck = DynamoPackageInspector.CheckPackages(tool.Str("packagesRequired"));
+            if (pkgCheck.HasMissing)
+            {
+                return RunResult.Fail(pkgCheck.Instructions);
+            }
 
             bool headless = tool.Str("executionMode") == "Headless";
             return DynamoRunner.Run(app, dynPath, headless);
-        }
-
-        /// <summary>Looks for package folders under %AppData%\Dynamo\Dynamo Revit\&lt;version&gt;\packages.</summary>
-        private static List<string> FindMissingPackages(string packagesRequired)
-        {
-            var missing = new List<string>();
-            if (string.IsNullOrWhiteSpace(packagesRequired)) return missing;
-
-            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Dynamo", "Dynamo Revit");
-            var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (Directory.Exists(root))
-                foreach (string versionDir in Directory.GetDirectories(root))
-                {
-                    string pkgDir = Path.Combine(versionDir, "packages");
-                    if (Directory.Exists(pkgDir))
-                        foreach (string p in Directory.GetDirectories(pkgDir)) installed.Add(Path.GetFileName(p));
-                }
-
-            foreach (string entry in packagesRequired.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                string name = Regex.Replace(entry, @"\(.*?\)", "").Trim();   // "Clockwork (2.4.0)" -> "Clockwork"
-                if (name.Length > 0 && !installed.Contains(name)) missing.Add(name);
-            }
-            return missing;
         }
 
         // ---------------- Ribbon buttons (pyRevit + any add-in) ----------------

@@ -9,11 +9,21 @@
   <script src="vendor/lucide.min.js"></script>
   <style>
     body { font-family: "Segoe UI", -apple-system, Roboto, sans-serif; }
+    input, textarea, pre, code { user-select: text; }
     .scroll::-webkit-scrollbar { width: 5px; height: 5px; }
     .scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .scroll::-webkit-scrollbar-track { background: transparent; }
     .fade-in { animation: fade .18s ease-out; }
     @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    select { 
+      -webkit-appearance: none; 
+      appearance: none; 
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E"); 
+      background-position: right 0.25rem center; 
+      background-repeat: no-repeat; 
+      background-size: 1em 1em; 
+      padding-right: 1.3rem !important; 
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px] select-none">
@@ -32,7 +42,14 @@
         <div id="ctx-line" class="text-[10px] text-slate-400 truncate">Connecting to Revit…</div>
       </div>
     </div>
-    <div class="flex items-center gap-0.5 shrink-0">
+    <div class="flex items-center gap-1 shrink-0">
+      <!-- Corner Medical Button for BIM Health Check -->
+      <button onclick="runBimHealthCheck()" id="btn-header-health" title="BIM Health Check: Audit model integrity, warnings, CAD imports & health score"
+              class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1 text-[11px] font-semibold transition shrink-0 group">
+        <i data-lucide="activity" class="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform"></i>
+        <span>Health</span>
+      </button>
+
       <button onclick="openRibbonModal()" title="Manage tools pinned to the Revit ribbon" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
         <i data-lucide="pin" class="w-3.5 h-3.5"></i>
         <span id="ribbon-badge-text">2</span>
@@ -893,6 +910,9 @@ function render() {
 
   // Filter tools deterministically
   const filtered = tools.filter(t => {
+    // BIM Health Check lives on the header corner medical button
+    if (t.toolId === 'bim-health-check' && !query) return false;
+
     if (filterOnlyFavorites && !favorites.has(t.toolId)) return false;
     if (activeCategory !== 'All' && t.category !== activeCategory) return false;
     if (filterPlatform !== 'All') {
@@ -955,6 +975,40 @@ function render() {
   icons();
 }
 
+function getDynamoMissingPackages(packagesRequired) {
+  if (!packagesRequired || 
+      packagesRequired === 'None' || 
+      packagesRequired.includes('Native .NET') || 
+      packagesRequired.includes('Standard Revit API') ||
+      packagesRequired.includes('Native Revit Command')) {
+    return [];
+  }
+  const installedList = (context.installedDynamoPackages || []).map(p => p.toLowerCase());
+  const entries = packagesRequired.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
+  const missing = [];
+
+  for (const raw of entries) {
+    const clean = raw.replace(/\(.*?\)/g, '').replace(/\s+for\s+Dynamo.*$/i, '').trim().toLowerCase();
+    if (!clean) continue;
+    let found = false;
+    for (const inst of installedList) {
+      if (inst.includes(clean) || clean.includes(inst)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      missing.push(raw);
+    }
+  }
+  return missing;
+}
+
+function runBimHealthCheck() {
+  toast('Running BIM Health Check audit in Revit...');
+  executeToolConfirmed('bim-health-check');
+}
+
 function renderToolCard(t) {
   const [platLabel, platCls] = PLATFORM_BADGE[t.actionType] || [t.actionType, 'bg-slate-100 text-slate-700 border-slate-200'];
   const isReadOnly = t.safetyLevel === 'ReadOnly';
@@ -963,6 +1017,8 @@ function renderToolCard(t) {
   const isPinned = ribbonPinnedIds.has(t.toolId);
   const isGh = t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || (t.targetPath && (t.targetPath.endsWith('.gh') || t.targetPath.endsWith('.ghx')));
   const needsRhinoInside = isGh && context.hasRhinoInside === false;
+  const isDynamo = t.actionType === 'Dynamo';
+  const missingDynamoPkgs = isDynamo ? getDynamoMissingPackages(t.packagesRequired) : [];
 
   return `
     <div class="bg-white rounded-lg border border-slate-200/90 p-3 hover:border-slate-300 hover:shadow-xs transition group">
@@ -976,6 +1032,7 @@ function renderToolCard(t) {
               ${isReadOnly ? 'Read-Only' : 'Modifies Model'}
             </span>
             ${needsRhinoInside ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-amber-50 text-amber-800 border-amber-300 font-medium inline-flex items-center gap-1" title="Rhino.Inside.Revit is required on this workstation"><i data-lucide="alert-triangle" class="w-2.5 h-2.5 text-amber-600"></i>Rhino.Inside Required</span>` : ''}
+            ${missingDynamoPkgs.length > 0 ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200 font-medium inline-flex items-center gap-1" title="Missing Dynamo Package(s): ${esc(missingDynamoPkgs.join(', '))}. Click Options to view install steps."><i data-lucide="package-minus" class="w-2.5 h-2.5 text-purple-600"></i>Missing: ${esc(missingDynamoPkgs[0])}</span>` : ''}
           </div>
           <p class="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">${esc(outcome)}</p>
         </div>
@@ -1028,6 +1085,14 @@ function handleToolRun(toolId) {
     return;
   }
 
+  const isDynamo = tool.actionType === 'Dynamo';
+  const missingDynamo = isDynamo ? getDynamoMissingPackages(tool.packagesRequired) : [];
+  if (missingDynamo.length > 0) {
+    // Missing Dynamo packages: open preflight check with clear installation guide
+    openPreflightModal(toolId);
+    return;
+  }
+
   // Step 5: Modifying operations MUST show preflight confirmation
   if (tool.safetyLevel === 'Modifying' || !tool.safetyLevel) {
     openPreflightModal(toolId);
@@ -1049,6 +1114,8 @@ function openPreflightModal(toolId) {
   const isModifying = tool.safetyLevel !== 'ReadOnly';
   const isGh = tool.actionType === 'Grasshopper' || tool.actionType === 'Rhino.Inside' || (tool.targetPath && (tool.targetPath.endsWith('.gh') || tool.targetPath.endsWith('.ghx')));
   const hasRhinoInside = context.hasRhinoInside !== false;
+  const isDynamo = tool.actionType === 'Dynamo';
+  const missingDynamoPkgs = isDynamo ? getDynamoMissingPackages(tool.packagesRequired) : [];
 
   let html = `
     <!-- Tool Summary Header -->
@@ -1086,6 +1153,33 @@ function openPreflightModal(toolId) {
         ${hasRhinoInside 
           ? `<span class="font-semibold text-emerald-700 text-xs">✓ Ready</span>` 
           : `<button onclick="openDocLink('https://www.rhino3d.com/inside/revit/8/')" class="text-blue-700 hover:underline font-semibold text-xs flex items-center gap-1">Download &amp; Install<i data-lucide="external-link" class="w-3 h-3"></i></button>`}
+      </div>` : ''}
+
+      ${isDynamo ? `
+      <div class="p-2.5 rounded-lg border ${missingDynamoPkgs.length === 0 ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-purple-50 border-purple-300 text-purple-900'} space-y-1.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="${missingDynamoPkgs.length === 0 ? 'check-circle' : 'package-x'}" class="w-4 h-4 ${missingDynamoPkgs.length === 0 ? 'text-emerald-600' : 'text-purple-600'}"></i>
+            <span class="font-semibold text-xs">Dynamo Package Dependencies</span>
+          </div>
+          <span class="font-bold text-[11px] ${missingDynamoPkgs.length === 0 ? 'text-emerald-700' : 'text-purple-700'}">
+            ${missingDynamoPkgs.length === 0 ? '✓ All Packages Present' : '✕ Missing Package(s)'}
+          </span>
+        </div>
+        ${missingDynamoPkgs.length > 0 ? `
+          <div class="text-[11px] text-purple-900 bg-white/80 p-2.5 rounded border border-purple-200 space-y-1">
+            <div class="font-bold text-purple-950 flex items-center gap-1">
+              <i data-lucide="alert-circle" class="w-3.5 h-3.5 text-purple-600"></i>
+              <span>Missing from this workstation:</span>
+            </div>
+            <div class="font-mono text-xs font-semibold text-purple-800 pl-4">${esc(missingDynamoPkgs.join(', '))}</div>
+            <div class="text-[10px] text-slate-600 pt-1 border-t border-purple-100">
+              <strong>How to install:</strong> In Revit, go to <em>Manage &gt; Dynamo &gt; Packages &gt; Search for a Package...</em>, search for the package, and click <strong>Install</strong>.
+            </div>
+          </div>
+        ` : `
+          <div class="text-[10px] text-emerald-700 pl-6">Required packages (${esc(tool.packagesRequired || 'None')}) are verified on this PC.</div>
+        `}
       </div>` : ''}
 
       <div class="p-2 rounded border ${hasDoc ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'} flex items-center justify-between">

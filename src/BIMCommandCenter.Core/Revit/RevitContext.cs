@@ -28,7 +28,8 @@ namespace BIMCommandCenter.Core.Revit
                 ["selectionCount"] = app.ActiveUIDocument?.Selection.GetElementIds().Count ?? 0,
                 ["hasRhinoInside"] = rhinoStatus.IsInstalled,
                 ["rhinoInsideLoaded"] = rhinoStatus.IsLoaded,
-                ["rhinoInsideStatus"] = rhinoStatus.Message
+                ["rhinoInsideStatus"] = rhinoStatus.Message,
+                ["installedDynamoPackages"] = DynamoPackageInspector.GetInstalledPackages()
             };
         }
 

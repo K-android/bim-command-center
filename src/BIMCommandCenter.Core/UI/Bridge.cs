@@ -80,12 +80,42 @@ namespace BIMCommandCenter.Core.UI
                         ["loadedAt"] = catalog.LoadedAt.ToString("s")
                     };
 
+                case "checkDynamoPackages":
+                {
+                    string req = payload.Str("packagesRequired");
+                    var check = DynamoPackageInspector.CheckPackages(req);
+                    return new Dictionary<string, object>
+                    {
+                        ["missing"] = check.Missing,
+                        ["installed"] = check.Installed,
+                        ["hasMissing"] = check.HasMissing,
+                        ["instructions"] = check.Instructions,
+                        ["allInstalled"] = DynamoPackageInspector.GetInstalledPackages()
+                    };
+                }
+
                 case "executeTool":
                 {
                     string toolId = payload.Str("toolId");
                     if (_s.Catalog.Current == null) await _s.Catalog.GetAsync(false);
-                    Dictionary<string, object> tool = _s.Catalog.FindTool(toolId)
-                        ?? throw new InvalidOperationException("Tool \"" + toolId + "\" is not in the catalog.");
+                    Dictionary<string, object> tool = _s.Catalog.FindTool(toolId);
+
+                    if (tool == null && string.Equals(toolId, "bim-health-check", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["toolId"] = "bim-health-check",
+                            ["title"] = "BIM Health Check",
+                            ["actionType"] = "NativeAddin",
+                            ["targetPath"] = "tools/BIMHealthCheck.dll",
+                            ["executionMode"] = "Native",
+                            ["safetyLevel"] = "ReadOnly",
+                            ["intendedOutcome"] = "Audits model integrity, health score, parameters, warnings, views, and links."
+                        };
+                    }
+
+                    if (tool == null)
+                        throw new InvalidOperationException("Tool \"" + toolId + "\" is not in the catalog.");
                     Log.Write("Execute " + toolId + " by " + Environment.UserName);
 
                     var sw = System.Diagnostics.Stopwatch.StartNew();

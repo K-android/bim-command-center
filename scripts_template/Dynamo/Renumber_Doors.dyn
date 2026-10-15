@@ -1,0 +1,68 @@
+{
+  "Uuid": "4e7c7a31-9238-4b72-8ef0-9118c7d61245",
+  "IsCustomNode": false,
+  "Description": "Renumber all doors in the active document matching their ToRoom and FromRoom numbers.",
+  "Name": "Renumber_Doors",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",
+      "FunctionSignature": "Clockwork.Revit.Elements.Door.RenumberByRoom",
+      "FunctionSymbol": "Door.RenumberByRoom",
+      "Id": "9b642e971cfc4b7ba2818a7c20c0879a",
+      "NodeType": "FunctionNode",
+      "Inputs": [],
+      "Outputs": [],
+      "Replication": "Auto",
+      "Description": "Renumber doors automatically"
+    }
+  ],
+  "Connectors": [],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [
+    {
+      "Name": "Clockwork for Dynamo 2.x",
+      "Version": "2.4.0",
+      "ReferenceType": "Package",
+      "Nodes": [
+        "9b642e971cfc4b7ba2818a7c20c0879a"
+      ]
+    }
+  ],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [],
+  "Author": "Central BIM Library",
+  "Linting": {
+    "Settings": {
+      "HasRunWithoutCrash": true
+    }
+  },
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.19.3.6394",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "NodeViews": []
+  }
+}

@@ -54,11 +54,25 @@ namespace BIMCommandCenter.Core.Infrastructure
             int cache;
             if (!int.TryParse(d.Str("cacheMinutes", "30"), out cache)) cache = 30;
 
+            string configuredScripts = d.Str("scriptsRoot", "");
+            string defaultScripts = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BIMCommandCenter", "scripts");
+            string scriptsRoot = !string.IsNullOrWhiteSpace(configuredScripts) ? Expand(configuredScripts) : defaultScripts;
+
+            try
+            {
+                Directory.CreateDirectory(scriptsRoot);
+                Directory.CreateDirectory(Path.Combine(scriptsRoot, "Dynamo"));
+                Directory.CreateDirectory(Path.Combine(scriptsRoot, "PyRevit"));
+                Directory.CreateDirectory(Path.Combine(scriptsRoot, "Custom Addins"));
+                Directory.CreateDirectory(Path.Combine(scriptsRoot, "Grasshopper"));
+            }
+            catch { }
+
             return new AppConfig
             {
                 CatalogSource = Expand(d.Str("catalogSource", "data/sample_catalog.json")),
                 CatalogSheet = d.Str("catalogSheet", ""),
-                ScriptsRoot = Expand(d.Str("scriptsRoot", "")),
+                ScriptsRoot = scriptsRoot,
                 TelemetryFolder = Expand(d.Str("telemetryFolder", "")),
                 KnowledgeGraphPath = Expand(d.Str("knowledgeGraphPath", "")),
                 IdeasEndpoint = d.Str("ideasEndpoint", ""),

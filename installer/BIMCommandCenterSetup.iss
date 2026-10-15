@@ -56,6 +56,7 @@ Source: "..\scripts_template\*"; DestDir: "{userappdata}\BIMCommandCenter\script
 Name: "{userappdata}\BIMCommandCenter\scripts\Dynamo"
 Name: "{userappdata}\BIMCommandCenter\scripts\PyRevit"
 Name: "{userappdata}\BIMCommandCenter\scripts\Custom Addins"
+Name: "{userappdata}\BIMCommandCenter\scripts\Grasshopper"
 
 [Code]
 // Helper function to write Revit .addin manifest file
