@@ -6,8 +6,41 @@
   "ElementResolver": {
     "ResolutionMap": {}
   },
-  "Inputs": [],
-  "Outputs": [],
+  "Inputs": [
+    {
+      "Id": "in_door_prefix",
+      "Name": "Door Prefix",
+      "Type": "string",
+      "Value": "D-",
+      "Description": "Prefix prepended to room number (e.g. 'D-')"
+    },
+    {
+      "Id": "in_renumber_mode",
+      "Name": "Renumber Mode",
+      "Type": "string",
+      "Value": "ToRoom",
+      "Description": "Renumber based on 'ToRoom' or 'FromRoom' boundary"
+    },
+    {
+      "Id": "in_include_level",
+      "Name": "Include Level",
+      "Type": "boolean",
+      "Value": "true",
+      "Description": "Include level number in the generated door mark"
+    }
+  ],
+  "Outputs": [
+    {
+      "Id": "out_count",
+      "Name": "Doors Updated Count",
+      "Description": "Total count of doors successfully renumbered in active model"
+    },
+    {
+      "Id": "out_status",
+      "Name": "Status Report",
+      "Description": "Summary of door renumbering execution"
+    }
+  ],
   "Nodes": [
     {
       "ConcreteType": "Dynamo.Graph.Nodes.CustomNodes.Function, DynamoCore",

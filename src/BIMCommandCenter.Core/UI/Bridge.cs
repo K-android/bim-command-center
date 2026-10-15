@@ -142,6 +142,37 @@ namespace BIMCommandCenter.Core.UI
                 case "captureViewport":
                     return await _s.Dispatcher.InvokeAsync(RevitContext.CaptureActiveView);
 
+                case "getDynamoGraphDetails":
+                {
+                    string toolId = payload.Str("toolId");
+                    string targetPath = payload.Str("targetPath");
+                    if (_s.Catalog.Current == null) await _s.Catalog.GetAsync(false);
+                    var tool = _s.Catalog.FindTool(toolId);
+                    if (tool != null && string.IsNullOrEmpty(targetPath))
+                    {
+                        targetPath = tool.Str("targetPath");
+                    }
+                    string resolved = _s.Runner.ResolvePath(targetPath);
+                    var details = DynamoPackageInspector.InspectGraph(resolved);
+                    return new Dictionary<string, object>
+                    {
+                        ["path"] = resolved,
+                        ["inputs"] = details.Inputs.Select(i => new Dictionary<string, object>
+                        {
+                            ["name"] = i.Name,
+                            ["type"] = i.Type,
+                            ["value"] = i.Value,
+                            ["description"] = i.Description
+                        }).ToList(),
+                        ["outputs"] = details.Outputs.Select(o => new Dictionary<string, object>
+                        {
+                            ["name"] = o.Name,
+                            ["description"] = o.Description
+                        }).ToList(),
+                        ["dependencies"] = details.Dependencies
+                    };
+                }
+
                 case "submitIdea":
                 {
                     Dictionary<string, object> context = await _s.Dispatcher.InvokeAsync(RevitContext.Describe);

@@ -37,7 +37,6 @@
       <div class="min-w-0">
         <div class="font-semibold text-xs leading-tight flex items-center gap-1.5">
           <span>BIM Command Center</span>
-          <span id="ai-active-badge" class="hidden w-1.5 h-1.5 rounded-full bg-emerald-400" title="AI Copilot connected"></span>
         </div>
         <div id="ctx-line" class="text-[10px] text-slate-400 truncate">Connecting to Revit…</div>
       </div>
@@ -69,7 +68,10 @@
   <!-- NAVIGATION TABS -->
   <nav class="bg-white border-b border-slate-200 px-2 flex items-center gap-1 shrink-0">
     <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700">Tools</button>
-    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800">Copilot</button>
+    <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1">
+      <span>Copilot</span>
+      <span class="text-[9px] bg-blue-100 text-blue-700 px-1 rounded font-medium">Librarian</span>
+    </button>
     <button id="tab-activity" onclick="switchTab('activity')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1">
       Activity
       <span id="activity-count" class="hidden text-[9px] bg-slate-100 text-slate-600 px-1 rounded-full font-mono">0</span>
@@ -78,40 +80,67 @@
 
   <div id="banner" class="hidden bg-amber-50 border-b border-amber-200 text-amber-800 text-xs px-4 py-2"></div>
 
-  <!-- VIEW 1: TOOLS -->
+  <!-- VIEW 1: TOOLS (CATEGORY RADIAL GRID HOMEPAGE + FILTERED LIBRARY) -->
   <main id="view-tools" class="flex-1 overflow-y-auto scroll flex flex-col">
-    <!-- SEARCH + FILTERS -->
+    <!-- SEARCH HEADER -->
     <section class="bg-white border-b border-slate-200 px-3 py-2.5 shrink-0 space-y-2">
       <div class="flex items-center gap-1.5">
         <div class="relative flex-1">
           <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400"></i>
-          <input id="search" type="text" oninput="render()" placeholder="Search tools…"
+          <input id="search" type="text" oninput="onSearchInput()" placeholder="Search tools or categories…"
                  class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-8 pr-7 py-1.5 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white">
           <button id="search-clear" onclick="clearSearch()" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-slate-700"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
         </div>
-        <button onclick="askCopilotFromSearch()" title="Ask Copilot to recommend a tool" class="p-1.5 rounded-md border border-slate-200 text-amber-500 hover:bg-amber-50 transition">
+        <button onclick="askCopilotFromSearch()" title="Ask Antigravity Librarian" class="p-1.5 rounded-md border border-slate-200 text-amber-500 hover:bg-amber-50 transition">
           <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
         </button>
         <button onclick="openFolder()" id="scripts-folder-btn" title="Open central library folder" class="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 transition">
           <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
         </button>
       </div>
+    </section>
 
-      <div class="flex items-center gap-1.5 text-[11px] overflow-x-auto scroll">
+    <!-- STATE A: CATEGORY RADIAL GRID HOMEPAGE -->
+    <section id="category-home-view" class="p-3.5 space-y-3.5 flex-1 overflow-y-auto scroll">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-600">Central Library Domains</h2>
+          <p class="text-[11px] text-slate-400">Select a category to browse approved automations</p>
+        </div>
+        <button onclick="selectCategory('All')" class="text-xs text-blue-600 hover:text-blue-800 font-semibold hover:underline">
+          Browse All (<span id="home-total-tools-count">0</span>)
+        </button>
+      </div>
+
+      <!-- RADIAL CATEGORY GRID -->
+      <div id="radial-categories-grid" class="grid grid-cols-2 gap-2.5">
+        <!-- Rendered dynamically by renderCategoryGrid() -->
+      </div>
+    </section>
+
+    <!-- STATE B: FILTERED LIBRARY VIEW -->
+    <section id="category-library-view" class="hidden flex-1 flex flex-col min-h-0">
+      <!-- Breadcrumb Bar -->
+      <div class="bg-slate-100/90 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between shrink-0">
+        <button onclick="backToCategoryHome()" class="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 transition group">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform"></i>
+          <span>Categories</span>
+        </button>
+        <div class="flex items-center gap-1.5 text-xs">
+          <span id="active-cat-name" class="font-bold text-slate-800">Documentation</span>
+          <span id="active-cat-count" class="text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.2 rounded-full">3</span>
+        </div>
+      </div>
+
+      <!-- FILTERS -->
+      <div class="bg-white border-b border-slate-200 px-3 py-2 shrink-0 flex items-center gap-1.5 text-[11px] overflow-x-auto scroll">
         <select id="sel-platform" onchange="setFilter('platform', this.value)" class="bg-white border border-slate-200 rounded-md px-1.5 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400">
           <option value="All">All platforms</option>
-          <option value="Dynamo">Dynamo</option>
+          <option value="Dynamo">Dynamo Player</option>
           <option value="PyRevit">pyRevit</option>
           <option value="NativeAddin">Add-in</option>
           <option value="PostableCommand">Revit Native</option>
           <option value="Grasshopper">Grasshopper</option>
-        </select>
-        <select id="sel-status" onchange="setFilter('status', this.value)" class="bg-white border border-slate-200 rounded-md px-1.5 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400">
-          <option value="All">Any status</option>
-          <option value="Approved">Approved</option>
-          <option value="Pilot">Pilot</option>
-          <option value="Restricted">Restricted</option>
-          <option value="Draft">Draft</option>
         </select>
         <select id="sel-safety" onchange="setFilter('safety', this.value)" class="bg-white border border-slate-200 rounded-md px-1.5 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400">
           <option value="All">Any impact</option>
@@ -123,35 +152,37 @@
           <i data-lucide="star" id="filter-fav-icon" class="w-3 h-3 text-slate-400"></i>
           <span id="fav-count-pill" class="font-mono">0</span>
         </button>
-        <button onclick="toggleGhFilter()" id="toggle-gh-btn" title="Filter Grasshopper (.gh) automations" class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 shrink-0 transition">
-          <i data-lucide="box" id="toggle-gh-icon" class="w-3 h-3 text-slate-400"></i>
-          <span id="toggle-gh-text">GH</span>
-        </button>
       </div>
 
-      <div id="category-pills" class="flex items-center gap-1.5 overflow-x-auto scroll text-xs"></div>
-    </section>
+      <!-- CARDS LIST -->
+      <div class="p-3.5 space-y-2.5 flex-1 overflow-y-auto scroll">
+        <div class="flex items-center justify-between text-xs text-slate-500 font-semibold px-0.5">
+          <span id="list-title">All Tools</span>
+          <span id="active-filter-indicator" class="text-[11px] text-blue-600 font-normal"></span>
+        </div>
 
-    <!-- TOOL CARDS LIST (High density, structured cards - Blueprint Page 2) -->
-    <section class="p-3.5 space-y-3 flex-1">
-      <div class="flex items-center justify-between text-xs text-slate-500 font-semibold px-0.5">
-        <span id="list-title">All Tools</span>
-        <span id="active-filter-indicator" class="text-[11px] text-blue-600 font-normal"></span>
+        <div id="tools-container" class="space-y-2.5"></div>
       </div>
-
-      <div id="tools-container" class="space-y-2.5"></div>
     </section>
   </main>
 
-  <!-- VIEW 2: COPILOT (GOVERNED AI ROUTER - Blueprint Page 4) -->
+  <!-- VIEW 2: COPILOT (ANTIGRAVITY THE LIBRARIAN) -->
   <main id="view-ai" class="hidden flex-1 flex flex-col min-h-0 bg-white">
-    <!-- Sub-header governance notice -->
-    <div class="bg-blue-50/70 border-b border-blue-100 px-3.5 py-1.5 flex items-center justify-between text-[11px] text-blue-800 shrink-0">
-      <div class="flex items-center gap-1.5">
-        <i data-lucide="shield" class="w-3.5 h-3.5 text-blue-600"></i>
-        <span><strong>Governed Assistant:</strong> Recommends approved catalog tools. Never modifies models silently.</span>
+    <!-- Sub-header Antigravity Librarian notice -->
+    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 px-3.5 py-2 flex items-center justify-between text-[11px] text-blue-900 shrink-0">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+        </div>
+        <div>
+          <div class="font-bold flex items-center gap-1.5 leading-tight">
+            <span>Antigravity</span>
+            <span class="text-[9px] bg-blue-200/70 text-blue-800 font-semibold px-1.5 py-0.2 rounded-full uppercase tracking-wider">Librarian</span>
+          </div>
+          <div class="text-[10px] text-blue-700/80">Interactive BIM automation concierge &amp; script librarian</div>
+        </div>
       </div>
-      <button onclick="clearChat()" class="text-blue-600 hover:text-blue-900 hover:underline">Clear Chat</button>
+      <button onclick="clearChat()" class="text-blue-600 hover:text-blue-900 text-xs hover:underline">Clear Chat</button>
     </div>
 
     <div id="chat" class="flex-1 overflow-y-auto scroll p-4 space-y-3.5 bg-slate-50/50"></div>
@@ -175,7 +206,7 @@
         <i data-lucide="paperclip" class="w-4 h-4"></i>
         <input type="file" accept=".pdf" class="hidden" onchange="attachPdf(event)">
       </label>
-      <input id="chat-input" type="text" placeholder="Describe the problem to solve (e.g. check model health, renumber doors, audit CAD)…" onkeydown="if(event.key==='Enter') sendChat()"
+      <input id="chat-input" type="text" placeholder="Ask Antigravity (e.g. renumber doors, audit CAD, check model health)…" onkeydown="if(event.key==='Enter') sendChat()"
              class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400">
       <button onclick="sendChat()" class="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition shadow-xs">
         <i data-lucide="send" class="w-4 h-4"></i>
@@ -816,12 +847,195 @@ function loadStoredSettings() {
 }
 
 function updateAiBadge() {
-  const badge = document.getElementById('ai-active-badge');
-  if (currentConfig.aiApiKey || currentConfig.aiProvider === 'local') {
-    badge.classList.remove('hidden');
-    badge.textContent = currentConfig.aiProvider.toUpperCase() + ' Active';
+  // Kept clean & simplistic: no AI provider text in the header
+}
+
+// ======================================================================
+//  Category Definitions & Radial Grid System
+// ======================================================================
+const CATEGORY_DEFINITIONS = [
+  {
+    id: 'Documentation',
+    title: 'Documentation',
+    subtitle: 'Renumbering, sheets, marks & tags',
+    icon: 'file-text',
+    radialBg: 'bg-blue-500',
+    iconBg: 'bg-blue-100',
+    iconColor: 'text-blue-700',
+    pillBg: 'bg-blue-50',
+    pillText: 'text-blue-700',
+    borderHover: 'hover:border-blue-400',
+    match: (t) => t.category === 'Documentation' || t.category === 'Documentation & Sheets' || (t.tags && (t.tags.includes('documentation') || t.tags.includes('doors')))
+  },
+  {
+    id: 'Computational',
+    title: 'Computational',
+    subtitle: 'Dynamo Player & Grasshopper',
+    icon: 'cpu',
+    radialBg: 'bg-purple-500',
+    iconBg: 'bg-purple-100',
+    iconColor: 'text-purple-700',
+    pillBg: 'bg-purple-50',
+    pillText: 'text-purple-700',
+    borderHover: 'hover:border-purple-400',
+    match: (t) => t.category === 'Computational' || t.actionType === 'Dynamo' || t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || (t.tags && t.tags.includes('dynamo'))
+  },
+  {
+    id: 'Quality',
+    title: 'Quality & QA',
+    subtitle: 'BIM Health audits, warnings & hygiene',
+    icon: 'shield-check',
+    radialBg: 'bg-emerald-500',
+    iconBg: 'bg-emerald-100',
+    iconColor: 'text-emerald-700',
+    pillBg: 'bg-emerald-50',
+    pillText: 'text-emerald-700',
+    borderHover: 'hover:border-emerald-400',
+    match: (t) => t.category === 'Quality & QA' || t.category === 'Quality' || (t.tags && (t.tags.includes('audit') || t.tags.includes('health') || t.tags.includes('qa')))
+  },
+  {
+    id: 'Maintenance',
+    title: 'Model Maintenance',
+    subtitle: 'Rooms, CAD purge & hygiene',
+    icon: 'wrench',
+    radialBg: 'bg-amber-500',
+    iconBg: 'bg-amber-100',
+    iconColor: 'text-amber-700',
+    pillBg: 'bg-amber-50',
+    pillText: 'text-amber-700',
+    borderHover: 'hover:border-amber-400',
+    match: (t) => t.category === 'Model Maintenance' || (t.tags && (t.tags.includes('maintenance') || t.tags.includes('rooms') || t.tags.includes('cad')))
+  },
+  {
+    id: 'Collaboration',
+    title: 'Collaboration & Setup',
+    subtitle: 'Central sync, compact & worksets',
+    icon: 'users',
+    radialBg: 'bg-sky-500',
+    iconBg: 'bg-sky-100',
+    iconColor: 'text-sky-700',
+    pillBg: 'bg-sky-50',
+    pillText: 'text-sky-700',
+    borderHover: 'hover:border-sky-400',
+    match: (t) => t.category === 'Project Setup & Standards' || t.category === 'Collaboration' || (t.tags && t.tags.includes('sync'))
+  },
+  {
+    id: 'All',
+    title: 'All Automations',
+    subtitle: 'Browse complete central library',
+    icon: 'layout-grid',
+    radialBg: 'bg-slate-500',
+    iconBg: 'bg-slate-100',
+    iconColor: 'text-slate-700',
+    pillBg: 'bg-slate-100',
+    pillText: 'text-slate-700',
+    borderHover: 'hover:border-slate-400',
+    match: (t) => t.toolId !== 'bim-health-check'
+  }
+];
+
+let currentSelectedCategory = null; // null = Homepage Grid, 'Documentation' | 'Computational' etc. = Library view
+
+function renderCategoryGrid() {
+  const container = document.getElementById('radial-categories-grid');
+  if (!container) return;
+
+  const validTools = tools.filter(t => t.toolId !== 'bim-health-check');
+  const totalCountEl = document.getElementById('home-total-tools-count');
+  if (totalCountEl) totalCountEl.textContent = validTools.length;
+
+  container.innerHTML = CATEGORY_DEFINITIONS.map(cat => {
+    const matching = cat.id === 'All'
+      ? validTools
+      : validTools.filter(t => cat.match(t));
+    const count = matching.length;
+
+    return `
+      <button onclick="selectCategory('${cat.id}')"
+              class="group relative text-left p-3 rounded-xl border border-slate-200/90 bg-white ${cat.borderHover} hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden">
+        <div class="absolute -right-3 -top-3 w-14 h-14 rounded-full ${cat.radialBg} opacity-10 group-hover:opacity-25 group-hover:scale-125 transition-all"></div>
+        <div class="flex items-start justify-between">
+          <div class="w-8 h-8 rounded-lg ${cat.iconBg} ${cat.iconColor} flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+            <i data-lucide="${cat.icon}" class="w-4 h-4"></i>
+          </div>
+          <span class="text-[10px] font-bold px-1.5 py-0.2 rounded-full ${cat.pillBg} ${cat.pillText} font-mono">
+            ${count} ${count === 1 ? 'tool' : 'tools'}
+          </span>
+        </div>
+        <div class="mt-2.5">
+          <div class="font-bold text-xs text-slate-800 group-hover:text-blue-600 transition-colors flex items-center gap-1">
+            <span>${esc(cat.title)}</span>
+            <i data-lucide="chevron-right" class="w-3 h-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-blue-600"></i>
+          </div>
+          <div class="text-[10.5px] text-slate-500 leading-snug mt-0.5 line-clamp-1">${esc(cat.subtitle)}</div>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  icons();
+}
+
+function selectCategory(catId) {
+  currentSelectedCategory = catId;
+  const catDef = CATEGORY_DEFINITIONS.find(c => c.id === catId);
+  const homeView = document.getElementById('category-home-view');
+  const libView = document.getElementById('category-library-view');
+
+  if (homeView) homeView.classList.add('hidden');
+  if (libView) libView.classList.remove('hidden');
+
+  const catNameEl = document.getElementById('active-cat-name');
+  if (catNameEl) catNameEl.textContent = catDef ? catDef.title : 'All Automations';
+
+  render();
+}
+
+function backToCategoryHome() {
+  currentSelectedCategory = null;
+  const searchInp = document.getElementById('search');
+  if (searchInp) searchInp.value = '';
+  const searchClr = document.getElementById('search-clear');
+  if (searchClr) searchClr.classList.add('hidden');
+
+  const homeView = document.getElementById('category-home-view');
+  const libView = document.getElementById('category-library-view');
+
+  if (libView) libView.classList.add('hidden');
+  if (homeView) homeView.classList.remove('hidden');
+
+  renderCategoryGrid();
+}
+
+function onSearchInput() {
+  const query = document.getElementById('search').value.trim();
+  const searchClr = document.getElementById('search-clear');
+  if (searchClr) searchClr.classList.toggle('hidden', !query);
+
+  const homeView = document.getElementById('category-home-view');
+  const libView = document.getElementById('category-library-view');
+
+  if (query) {
+    if (homeView) homeView.classList.add('hidden');
+    if (libView) libView.classList.remove('hidden');
+    const catNameEl = document.getElementById('active-cat-name');
+    if (catNameEl) catNameEl.textContent = 'Search Results';
+  } else if (!currentSelectedCategory) {
+    if (libView) libView.classList.add('hidden');
+    if (homeView) homeView.classList.remove('hidden');
+    renderCategoryGrid();
+    return;
+  }
+  render();
+}
+
+function clearSearch() {
+  document.getElementById('search').value = '';
+  document.getElementById('search-clear').classList.add('hidden');
+  if (!currentSelectedCategory) {
+    backToCategoryHome();
   } else {
-    badge.classList.add('hidden');
+    render();
   }
 }
 
@@ -834,6 +1048,7 @@ async function loadCatalog(refresh) {
   } catch (e) {
     setBanner('Could not load the tool catalog: ' + e.message);
   }
+  renderCategoryGrid();
   render();
 }
 
@@ -841,14 +1056,6 @@ function setBanner(text) {
   const b = document.getElementById('banner');
   b.textContent = text || '';
   b.classList.toggle('hidden', !text);
-}
-
-// ======================================================================
-//  Filters & Rendering (Blueprint Page 2)
-// ======================================================================
-function setCategory(c) {
-  activeCategory = c;
-  render();
 }
 
 function setFilter(type, val) {
@@ -860,11 +1067,6 @@ function setFilter(type, val) {
   else if (type === 'safety') filterSafety = val;
   const sel = document.getElementById(type === 'platform' ? 'sel-platform' : type === 'status' ? 'sel-status' : 'sel-safety');
   if (sel && sel.value !== val) sel.value = val;
-  render();
-}
-
-function clearSearch() {
-  document.getElementById('search').value = '';
   render();
 }
 
@@ -892,29 +1094,21 @@ function matchesSearch(tool, query) {
 
 function render() {
   const query = document.getElementById('search').value.trim();
-  document.getElementById('search-clear').classList.toggle('hidden', !query);
 
-  // Render category pills
-  const counts = {};
-  tools.forEach(t => counts[t.category] = (counts[t.category] || 0) + 1);
-  const categories = ['All', ...Object.keys(counts).sort()];
-  
-  document.getElementById('category-pills').innerHTML = categories.map(c => {
-    const on = activeCategory === c;
-    const count = c === 'All' ? tools.length : (counts[c] || 0);
-    return `<button onclick="setCategory('${esc(c)}')" class="px-2.5 py-1 rounded-full shrink-0 font-medium transition flex items-center gap-1.5 ${on ? 'bg-blue-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">
-      <span>${esc(c)}</span>
-      <span class="text-[10px] ${on ? 'bg-blue-700 text-blue-100' : 'bg-slate-200 text-slate-600'} px-1.5 py-0.2 rounded-full font-mono">${count}</span>
-    </button>`;
-  }).join('');
+  // Find active category definition if any
+  const catDef = currentSelectedCategory ? CATEGORY_DEFINITIONS.find(c => c.id === currentSelectedCategory) : null;
 
   // Filter tools deterministically
   const filtered = tools.filter(t => {
     // BIM Health Check lives on the header corner medical button
     if (t.toolId === 'bim-health-check' && !query) return false;
 
+    // Category filter
+    if (catDef && catDef.id !== 'All' && !query) {
+      if (!catDef.match(t)) return false;
+    }
+
     if (filterOnlyFavorites && !favorites.has(t.toolId)) return false;
-    if (activeCategory !== 'All' && t.category !== activeCategory) return false;
     if (filterPlatform !== 'All') {
       if (filterPlatform === 'Grasshopper') {
         const isGh = t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || t.actionType === 'Rhino' || (t.targetPath && (t.targetPath.endsWith('.gh') || t.targetPath.endsWith('.ghx')));
@@ -928,12 +1122,19 @@ function render() {
     return matchesSearch(t, query);
   });
 
-  // Update header text
-  document.getElementById('list-title').textContent =
-    filterOnlyFavorites ? `★ Favorite Tools (${filtered.length})` :
-    (query ? `Search: "${query}" (${filtered.length} matching)` : `${activeCategory} Tools (${filtered.length})`);
+  // Update header text and count
+  const listTitle = document.getElementById('list-title');
+  if (listTitle) {
+    listTitle.textContent = filterOnlyFavorites
+      ? `★ Favorite Tools (${filtered.length})`
+      : (query ? `Search: "${query}" (${filtered.length} matching)` : `${catDef ? catDef.title : 'All'} (${filtered.length})`);
+  }
+  const catCountEl = document.getElementById('active-cat-count');
+  if (catCountEl) catCountEl.textContent = filtered.length;
 
   const container = document.getElementById('tools-container');
+  if (!container) return;
+
   let ghWarningBanner = '';
   if (filterPlatform === 'Grasshopper' && context.hasRhinoInside === false) {
     ghWarningBanner = `
@@ -958,13 +1159,13 @@ function render() {
       <div class="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">
         <i data-lucide="search-x" class="w-8 h-8 mx-auto text-slate-300"></i>
         <p class="font-semibold text-xs mt-2 text-slate-700">No automation matches these criteria.</p>
-        <p class="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">Try clearing one of the filters, or request this automation for your firm.</p>
+        <p class="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">Try clearing filters or requesting an automation for your firm.</p>
         <div class="mt-3 flex items-center justify-center gap-2">
-          <button onclick="filterOnlyFavorites=false;setFilter('platform','All');setFilter('status','All');setFilter('safety','All');setCategory('All');clearSearch()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-xs font-semibold">
-            Clear Filters
+          <button onclick="backToCategoryHome()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-xs font-semibold">
+            Back to Categories
           </button>
           <button onclick="openSubmitModal('${esc(query).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md text-xs font-semibold">
-            Request / Submit Idea
+            Request Automation
           </button>
         </div>
       </div>`;
@@ -1010,14 +1211,17 @@ function runBimHealthCheck() {
 }
 
 function renderToolCard(t) {
-  const [platLabel, platCls] = PLATFORM_BADGE[t.actionType] || [t.actionType, 'bg-slate-100 text-slate-700 border-slate-200'];
+  const isDynamo = t.actionType === 'Dynamo';
+  const [platLabel, platCls] = isDynamo 
+    ? ['Dynamo Player', 'bg-blue-50 text-blue-700 border-blue-200']
+    : (PLATFORM_BADGE[t.actionType] || [t.actionType, 'bg-slate-100 text-slate-700 border-slate-200']);
+  
   const isReadOnly = t.safetyLevel === 'ReadOnly';
   const outcome = t.intendedOutcome || t.description;
   const isFav = favorites.has(t.toolId);
   const isPinned = ribbonPinnedIds.has(t.toolId);
   const isGh = t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside' || (t.targetPath && (t.targetPath.endsWith('.gh') || t.targetPath.endsWith('.ghx')));
   const needsRhinoInside = isGh && context.hasRhinoInside === false;
-  const isDynamo = t.actionType === 'Dynamo';
   const missingDynamoPkgs = isDynamo ? getDynamoMissingPackages(t.packagesRequired) : [];
 
   return `
@@ -1029,7 +1233,7 @@ function renderToolCard(t) {
             <span class="text-[9px] px-1.5 py-0.2 rounded border ${platCls} font-mono">${platLabel}</span>
             ${t.status && t.status !== 'Approved' ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-blue-50 text-blue-700 border-blue-200">${esc(t.status)}</span>` : ''}
             <span class="text-[9px] px-1.5 py-0.2 rounded border ${isReadOnly ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
-              ${isReadOnly ? 'Read-Only' : 'Modifies Model'}
+              ${isDynamo ? 'Inputs &amp; Outputs' : (isReadOnly ? 'Read-Only' : 'Modifies Model')}
             </span>
             ${needsRhinoInside ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-amber-50 text-amber-800 border-amber-300 font-medium inline-flex items-center gap-1" title="Rhino.Inside.Revit is required on this workstation"><i data-lucide="alert-triangle" class="w-2.5 h-2.5 text-amber-600"></i>Rhino.Inside Required</span>` : ''}
             ${missingDynamoPkgs.length > 0 ? `<span class="text-[9px] px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200 font-medium inline-flex items-center gap-1" title="Missing Dynamo Package(s): ${esc(missingDynamoPkgs.join(', '))}. Click Options to view install steps."><i data-lucide="package-minus" class="w-2.5 h-2.5 text-purple-600"></i>Missing: ${esc(missingDynamoPkgs[0])}</span>` : ''}
@@ -1049,8 +1253,8 @@ function renderToolCard(t) {
 
       <div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
         <div class="flex items-center gap-1.5">
-          <button onclick="handleToolRun('${esc(t.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-2.5 py-1 rounded text-[11px] inline-flex items-center gap-1 transition shadow-2xs">
-            <i data-lucide="play" class="w-3 h-3"></i>Run
+          <button onclick="handleToolRun('${esc(t.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-2.5 py-1 rounded text-[11px] inline-flex items-center gap-1 transition shadow-2xs" title="${isDynamo ? 'Runs via Dynamo Player with parameter inputs & outputs only' : 'Run automation'}">
+            <i data-lucide="${isDynamo ? 'play' : 'play'}" class="w-3 h-3"></i>${isDynamo ? 'Launch Player' : 'Run'}
           </button>
           <button onclick="openPreflightModal('${esc(t.toolId)}')" class="bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded text-[11px] inline-flex items-center gap-1 transition">
             <i data-lucide="sliders" class="w-3 h-3 text-slate-400"></i>Options
@@ -1182,6 +1386,20 @@ function openPreflightModal(toolId) {
         `}
       </div>` : ''}
 
+      ${isDynamo ? `
+      <div class="p-2.5 rounded-lg border bg-blue-50/70 border-blue-200 text-blue-900 space-y-1">
+        <div class="font-bold flex items-center gap-1.5 text-xs">
+          <i data-lucide="play-circle" class="w-4 h-4 text-blue-600"></i>
+          <span>Dynamo Player Mode</span>
+        </div>
+        <p class="text-[11px] text-blue-800 leading-relaxed">
+          Runs through <strong>Dynamo Player</strong>. Configure input parameters and review outputs cleanly without opening the node editor canvas.
+        </p>
+        <div id="dynamo-io-preview" class="pt-1.5 border-t border-blue-200/60 text-[10.5px]">
+          <span class="text-blue-600 italic">Inspecting graph inputs &amp; outputs…</span>
+        </div>
+      </div>` : ''}
+
       <div class="p-2 rounded border ${hasDoc ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'} flex items-center justify-between">
         <div class="flex items-center gap-2">
           <i data-lucide="${hasDoc ? 'check-circle' : 'alert-circle'}" class="w-4 h-4"></i>
@@ -1231,8 +1449,42 @@ function openPreflightModal(toolId) {
   `;
 
   document.getElementById('preflight-content').innerHTML = html;
+  
+  const confirmBtn = document.getElementById('preflight-confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.innerHTML = isDynamo 
+      ? '<i data-lucide="play" class="w-3.5 h-3.5"></i>Launch in Dynamo Player'
+      : `<i data-lucide="play" class="w-3.5 h-3.5"></i>${isModifying ? 'Confirm & Execute' : 'Execute Now'}`;
+  }
+
   document.getElementById('preflight-modal').classList.remove('hidden');
   icons();
+
+  if (isDynamo) {
+    Bridge.call('getDynamoGraphDetails', { toolId: tool.toolId, targetPath: tool.targetPath })
+      .then(res => {
+        const ioBox = document.getElementById('dynamo-io-preview');
+        if (!ioBox) return;
+        const inputs = res.inputs || [];
+        const outputs = res.outputs || [];
+        if (!inputs.length && !outputs.length) {
+          ioBox.innerHTML = '<span class="text-slate-500">Standard Dynamo Player inputs will be displayed in the player panel.</span>';
+          return;
+        }
+        let ioHtml = '<div class="space-y-1">';
+        if (inputs.length) {
+          ioHtml += '<div class="font-semibold text-blue-950">Inputs (Dynamo Player):</div>';
+          ioHtml += inputs.map(i => `<div class="pl-2 text-slate-700 font-mono text-[10.5px]">• <strong>${esc(i.name)}</strong> (${esc(i.type || 'var')})${i.value ? ` = <span class="text-blue-700 font-bold">${esc(i.value)}</span>` : ''}</div>`).join('');
+        }
+        if (outputs.length) {
+          ioHtml += '<div class="font-semibold text-blue-950 mt-1">Outputs:</div>';
+          ioHtml += outputs.map(o => `<div class="pl-2 text-slate-700 font-mono text-[10.5px]">• <strong>${esc(o.name)}</strong></div>`).join('');
+        }
+        ioHtml += '</div>';
+        ioBox.innerHTML = ioHtml;
+      })
+      .catch(() => {});
+  }
 }
 
 function closePreflightModal() {
@@ -1659,25 +1911,46 @@ async function submitToolForGovernance(e) {
 // ======================================================================
 //  Copilot: Governed AI Router & Response Contract (Blueprint Page 4)
 // ======================================================================
+//  Copilot: Antigravity the BIM Librarian
+// ======================================================================
 let chatAttachment = null;
 
 function initChips() {
   const list = [
-    'Run BIM Health Check',
-    'Renumber doors by adjacent room',
-    'Audit & purge unplaced rooms',
-    'Align plan viewports across sheets',
-    'Batch export sheets to PDF'
+    { label: '💬 What can you do?', query: 'What tools are in the library?' },
+    { label: '🚪 Renumber Doors', query: 'How do I renumber doors?' },
+    { label: '🏠 Audit Unplaced Rooms', query: 'Audit unplaced rooms' },
+    { label: '📐 Purge CAD Imports', query: 'Inspect and purge imported CAD' },
+    { label: '🩺 Model Health Score', query: 'Run BIM Health Check' },
+    { label: '📦 Dynamo Packages', query: 'What Dynamo packages are installed?' }
   ];
   document.getElementById('chips').innerHTML = list.map(c =>
-    `<button onclick="sendQuick('${esc(c)}')" class="shrink-0 text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 transition">${esc(c)}</button>`
+    `<button onclick="sendQuick('${esc(c.query)}')" class="shrink-0 text-[11px] bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 transition">${esc(c.label)}</button>`
   ).join('');
 }
 
 function clearChat() {
   document.getElementById('chat').innerHTML = '';
-  addBot(`<p class="text-xs">Welcome to the <strong>Enterprise BIM Command Center</strong> automation router.</p>
-    <p class="text-[11.5px] text-slate-600 mt-1">Describe a modeling, coordination, or documentation task. I will locate the approved tool from the corporate catalog, review prerequisites, and route safe execution.</p>`);
+  addBot(`
+    <div class="space-y-2">
+      <p class="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+        <span class="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+        Greetings! I am Antigravity, your Central BIM Librarian.
+      </p>
+      <p class="text-xs text-slate-600 leading-relaxed">
+        I curate our firm's verified Central Automation Library. I can help you find approved tools, run Dynamo graphs via Dynamo Player (clean inputs and outputs only), audit model health, or troubleshoot Revit automation workflows.
+      </p>
+      <div class="pt-1 text-[11px] text-slate-500">
+        How can I help you today? Try clicking a suggestion below or typing your task:
+      </div>
+      <div class="pt-1 flex flex-wrap gap-1.5">
+        <button onclick="sendQuick('What tools are in the library?')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Browse Central Library</button>
+        <button onclick="sendQuick('How do I renumber doors?')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Renumber Doors</button>
+        <button onclick="sendQuick('Audit unplaced rooms')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Room Hygiene</button>
+        <button onclick="sendQuick('Inspect and purge imported CAD')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Audit CAD</button>
+      </div>
+    </div>
+  `);
 }
 
 function sendQuick(q) {
@@ -1744,8 +2017,8 @@ function addBot(html) {
   const el = document.createElement('div');
   el.className = 'flex gap-2.5 items-start fade-in';
   el.innerHTML = `
-    <div class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-      <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+      <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
     </div>
     <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs leading-relaxed max-w-[92%] shadow-2xs text-slate-800 space-y-1">
       ${html}
@@ -1787,7 +2060,7 @@ async function sendChat() {
   const typingId = 'typing_' + Date.now();
   addBot(`<div id="${typingId}" class="flex items-center gap-2 text-slate-400 text-xs">
     <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-    Checking approved catalog & evaluating compatibility…
+    Antigravity is consulting the Central Library…
   </div>`);
 
   try {
@@ -1799,55 +2072,49 @@ async function sendChat() {
     }
   } catch (err) {
     document.getElementById(typingId)?.remove();
-    addBot(`<p class="text-rose-600 font-semibold">AI Router Error: ${esc(err.message)}</p>
-      <p class="text-[11px] text-slate-500 mt-1">Falling back to deterministic local catalog matching:</p>`);
+    addBot(`<p class="text-rose-600 font-semibold">Antigravity Note: ${esc(err.message)}</p>
+      <p class="text-[11px] text-slate-500 mt-1">Consulting the local Central Library catalog directly:</p>`);
     respondWithLocalRouter(text);
   }
 }
 
-// AI API Call with Routing Response Contract (Blueprint Page 4)
+// AI API Call with Antigravity Librarian Persona
 async function callAiApi(promptText, att, typingId) {
   const eligibleTools = tools.filter(t => (t.status || 'Approved') !== 'Deprecated').map(t => ({
     toolId: t.toolId,
     title: t.title,
-    version: t.version,
-    status: t.status,
+    actionType: t.actionType,
     category: t.category,
     intendedOutcome: t.intendedOutcome,
     safetyLevel: t.safetyLevel,
     affectedData: t.affectedData,
-    packagesRequired: t.packagesRequired,
-    revitVersions: t.revitVersions
+    packagesRequired: t.packagesRequired
   }));
 
-  const systemInstructions = `You are the BIM Command Center Governed AI Router inside Autodesk Revit.
-Available Approved Tools:
+  const systemInstructions = `You are Antigravity, the elite Central BIM Automation Librarian & Systems Architect inside Autodesk Revit.
+You are warm, interactive, highly knowledgeable, and concise.
+
+Approved Central Library Tools:
 ${JSON.stringify(eligibleTools)}
 
 Active Project Context:
 - Document: ${context.documentTitle || 'Sample Model'}
-- Host Revit Version: ${context.revitVersion || '2026'}
-- Active View: ${context.activeView || 'Default View'}
+- Revit Version: ${context.revitVersion || '2026'}
+- Installed Dynamo Packages: ${(context.installedDynamoPackages || []).join(', ')}
 
-RULES (Strict Governance Contract):
-1. Never suggest unapproved or newly generated code. Match only from the registered tools list.
-2. If an approved tool matches the user's intent, respond STRICTLY in this JSON format inside a markdown block:
-\`\`\`json
-{
-  "matchedToolId": "exact-toolId",
-  "why": "Brief explanation of matched outcome, project context, and version compatibility",
-  "willChange": "Model elements, parameters, or files affected",
-  "needs": "Selection, parameter inputs, or prerequisites required",
-  "alternatives": "Other eligible tools or trade-offs if applicable"
-}
-\`\`\`
-3. If no approved tool matches, set "matchedToolId": null and provide manual workflow or documentation advice.`;
+GUIDELINES:
+1. Speak conversationally as Antigravity the Librarian. Keep your response helpful, concise, and professional.
+2. For Dynamo (.dyn) graphs, note that they run cleanly via Dynamo Player (inputs & outputs only, no graph editor clutter).
+3. If an approved automation directly solves or assists the user's task, mention it and include this token in your response:
+[TOOL:exact-toolId]
+Our interactive UI will automatically embed an execution card for that tool!
+4. If no approved tool matches, provide practical Revit guidance, best practices, or Revit API tips, and invite the user to request the automation.`;
 
   let replyText = '';
 
   if (currentConfig.aiProvider === 'gemini') {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentConfig.aiModel || 'gemini-1.5-flash'}:generateContent?key=${currentConfig.aiApiKey}`;
-    const parts = [{ text: systemInstructions + '\n\nUser Goal: ' + (promptText || 'Inspect attached drawing') }];
+    const parts = [{ text: systemInstructions + '\n\nUser Question: ' + (promptText || 'Inspect attached drawing') }];
     if (att && att.base64) {
       parts.push({ inlineData: { mimeType: att.mimeType || 'image/png', data: att.base64 } });
     }
@@ -1856,7 +2123,7 @@ RULES (Strict Governance Contract):
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts }] })
     });
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Gemini API error (HTTP ${res.status})`);
     const data = await res.json();
     replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   } else if (currentConfig.aiProvider === 'groq') {
@@ -1872,7 +2139,7 @@ RULES (Strict Governance Contract):
         ]
       })
     });
-    if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Groq API error (HTTP ${res.status})`);
     const data = await res.json();
     replyText = data.choices?.[0]?.message?.content || '';
   } else {
@@ -1889,14 +2156,14 @@ RULES (Strict Governance Contract):
         ]
       })
     });
-    if (!res.ok) throw new Error(`Local AI HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Local AI error (HTTP ${res.status})`);
     const data = await res.json();
     replyText = data.choices?.[0]?.message?.content || '';
   }
 
   document.getElementById(typingId)?.remove();
 
-  // Parse structured contract JSON
+  // Parse structured contract JSON if model returned code block
   const jsonMatch = replyText.match(/```json\s*([\s\S]*?)\s*```/);
   if (jsonMatch) {
     try {
@@ -1908,49 +2175,73 @@ RULES (Strict Governance Contract):
     } catch (e) {}
   }
 
-  // Fallback to text render
+  // Check for [TOOL:toolId] tags and render
+  const toolTokenMatch = replyText.match(/\[TOOL:\s*([^\]]+)\]/);
+  if (toolTokenMatch) {
+    const matchedId = toolTokenMatch[1].trim();
+    const cleanText = replyText.replace(/\[TOOL:\s*([^\]]+)\]/g, '').trim();
+    if (cleanText) addBot(renderMarkdown(cleanText));
+    const foundTool = tools.find(t => t.toolId === matchedId);
+    if (foundTool) {
+      renderContractCard({
+        matchedToolId: foundTool.toolId,
+        why: foundTool.intendedOutcome || foundTool.description,
+        willChange: foundTool.affectedData,
+        needs: foundTool.packagesRequired
+      });
+      return;
+    }
+  }
+
+  // Render conversational markdown
   addBot(renderMarkdown(replyText));
 }
 
-// Render Routing Response Contract Card (Blueprint Page 4)
+// Render Routing Response Contract Card
 function renderContractCard(contract) {
   const tool = tools.find(t => t.toolId === contract.matchedToolId);
   if (!tool) {
-    addBot(`<p>${esc(contract.why || 'No matching tool found.')}</p>`);
+    addBot(`<p>${esc(contract.why || 'No matching tool found in central library.')}</p>`);
     return;
   }
 
+  const isDynamo = tool.actionType === 'Dynamo';
   const isModifying = tool.safetyLevel !== 'ReadOnly';
+  const missingDynamo = isDynamo ? getDynamoMissingPackages(tool.packagesRequired) : [];
+
   const html = `
-    <div class="border border-blue-200 bg-blue-50/40 rounded-xl p-3.5 space-y-2.5">
+    <div class="border border-blue-200 bg-blue-50/40 rounded-xl p-3.5 space-y-2.5 shadow-2xs">
       <div class="flex items-center justify-between">
         <span class="text-[10px] uppercase font-bold text-blue-700 tracking-wide flex items-center gap-1">
-          <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>Recommended Approved Automation
+          <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>Approved Central Automation
         </span>
         <span class="text-[10px] px-1.5 py-0.2 rounded border bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold">
           ${tool.status || 'Approved'}
         </span>
       </div>
 
-      <div class="font-bold text-sm text-slate-900">${esc(tool.title)} <span class="text-xs font-normal text-slate-500">(${tool.actionType} · ${tool.version || 'v1.0'})</span></div>
+      <div class="font-bold text-sm text-slate-900 flex items-center gap-1.5 flex-wrap">
+        <span>${esc(tool.title)}</span>
+        <span class="text-xs font-normal text-slate-500">(${isDynamo ? 'Dynamo Player' : tool.actionType} · ${tool.version || 'v1.0'})</span>
+      </div>
 
       <div class="space-y-1 text-[11.5px] text-slate-700 leading-snug">
-        <div><strong>Why:</strong> ${esc(contract.why || tool.intendedOutcome || tool.description)}</div>
-        <div><strong>Will change:</strong> <span class="${isModifying ? 'text-amber-800 font-semibold' : 'text-sky-800'}">${esc(contract.willChange || tool.affectedData || 'None')}</span></div>
-        <div><strong>Needs:</strong> ${esc(contract.needs || tool.packagesRequired || 'Active model open')}</div>
-        ${contract.alternatives ? `<div class="text-slate-500"><strong>Alternatives:</strong> ${esc(contract.alternatives)}</div>` : ''}
+        <div><strong>Outcome:</strong> ${esc(contract.why || tool.intendedOutcome || tool.description)}</div>
+        <div><strong>Model Impact:</strong> <span class="${isModifying ? 'text-amber-800 font-semibold' : 'text-sky-800'}">${esc(contract.willChange || tool.affectedData || 'None')}</span></div>
+        <div><strong>Requirements:</strong> ${esc(contract.needs || tool.packagesRequired || 'Active project open')}</div>
+        ${isDynamo ? `<div class="text-[11px] text-blue-700 font-medium">Runs via Dynamo Player with parameter inputs &amp; outputs only (no node editor clutter).</div>` : ''}
+        ${missingDynamo.length > 0 ? `<div class="text-[11px] text-purple-700 font-semibold">⚠️ Missing Package: ${esc(missingDynamo.join(', '))}</div>` : ''}
       </div>
 
       <div class="pt-2 border-t border-blue-100 flex items-center justify-between">
-        <span class="text-[11px] text-slate-500 font-medium">${isModifying ? 'Requires preflight confirmation' : 'Safe read-only execution'}</span>
+        <span class="text-[11px] text-slate-500 font-medium">${isDynamo ? 'Dynamo Player Execution' : (isModifying ? 'Requires preflight preview' : 'Safe read-only execution')}</span>
         <div class="flex items-center gap-1.5">
           <button onclick="handleToolRun('${esc(tool.toolId)}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-md text-xs inline-flex items-center gap-1 shadow-2xs transition">
-            <i data-lucide="play" class="w-3.5 h-3.5"></i>${isModifying ? 'Preview & Confirm' : 'Execute Now'}
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>${isDynamo ? 'Launch Player' : (isModifying ? 'Preview & Confirm' : 'Execute Now')}
           </button>
-          ${tool.documentationUrl ? `
-            <button onclick="openDocLink('${esc(tool.documentationUrl)}')" class="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2.5 py-1.5 rounded-md text-xs">
-              Docs
-            </button>` : ''}
+          <button onclick="openPreflightModal('${esc(tool.toolId)}')" class="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2 py-1.5 rounded-md text-xs">
+            Options
+          </button>
         </div>
       </div>
     </div>
@@ -1959,14 +2250,144 @@ function renderContractCard(contract) {
   addBot(html);
 }
 
-// Local deterministic routing fallback when offline or no API key
+// Intelligent Offline / Local Semantic Librarian
 function respondWithLocalRouter(text) {
-  const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
-  const scored = tools.map(t => {
+  const lower = text.toLowerCase().trim();
+
+  // 1. Greetings & Librarian Persona
+  if (/^(hi|hello|hey|greetings|morning|afternoon|evening|help|who are you|what can you do)/i.test(lower)) {
+    addBot(`
+      <p class="font-semibold text-slate-800">Hello! I am <strong>Antigravity</strong>, your BIM Automation Librarian.</p>
+      <p class="text-slate-600 mt-1 leading-relaxed">
+        Our central repository contains verified scripts and tools organized into 5 major domains:
+      </p>
+      <div class="mt-2.5 grid grid-cols-2 gap-1.5 text-[11px]">
+        <button onclick="selectCategory('Documentation'); switchTab('tools')" class="text-left p-1.5 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition">
+          <div class="font-bold text-blue-800">📄 Documentation</div>
+          <div class="text-slate-500 text-[10px]">Door renumbering, views</div>
+        </button>
+        <button onclick="selectCategory('Computational'); switchTab('tools')" class="text-left p-1.5 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 transition">
+          <div class="font-bold text-purple-800">⚙️ Computational</div>
+          <div class="text-slate-500 text-[10px]">Dynamo Player graphs</div>
+        </button>
+        <button onclick="selectCategory('Quality'); switchTab('tools')" class="text-left p-1.5 bg-emerald-50 border border-emerald-200 rounded hover:bg-emerald-100 transition">
+          <div class="font-bold text-emerald-800">🩺 Quality & QA</div>
+          <div class="text-slate-500 text-[10px]">BIM Health & warnings</div>
+        </button>
+        <button onclick="selectCategory('Maintenance'); switchTab('tools')" class="text-left p-1.5 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 transition">
+          <div class="font-bold text-amber-800">🧹 Maintenance</div>
+          <div class="text-slate-500 text-[10px]">Rooms, CAD imports</div>
+        </button>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-2">Ask me about specific tasks like <em>"renumber doors"</em>, <em>"audit CAD"</em>, or <em>"check model health"</em>.</p>
+    `);
+    return;
+  }
+
+  // 2. Door Renumbering Intent
+  if (/door|renumber/i.test(lower)) {
+    addBot(`
+      <p>For door numbering, we run <strong>Renumber Doors by Room</strong> cleanly through <strong>Dynamo Player</strong>. It opens only the input and output controls without exposing the graph canvas.</p>
+      <p class="text-slate-600 text-[11px] mt-1">It automatically matches each door's Mark to its adjacent room number with customizable prefixes.</p>
+    `);
+    renderContractCard({
+      matchedToolId: 'renumber-doors',
+      why: 'Dynamo Player automation for door mark coordination with room boundaries.',
+      willChange: 'Door element Mark parameter in active document.',
+      needs: 'Clockwork for Dynamo 2.x'
+    });
+    return;
+  }
+
+  // 3. Room Hygiene Intent
+  if (/room|unplaced|redundant/i.test(lower)) {
+    addBot(`
+      <p>Unplaced and redundant rooms inflate model size and cause schedule discrepancies. I recommend running our pure pyRevit API script <strong>Audit Unplaced &amp; Redundant Rooms</strong>.</p>
+      <p class="text-slate-600 text-[11px] mt-1">It scans the document in under 3 seconds and lists all invalid room elements safely without altering data.</p>
+    `);
+    renderContractCard({
+      matchedToolId: 'audit-unplaced-rooms',
+      why: 'Safe read-only audit of unplaced and redundant room elements.',
+      willChange: 'None (Read-only analysis)',
+      needs: 'Active Revit project open'
+    });
+    return;
+  }
+
+  // 4. CAD & DWG Import Hygiene Intent
+  if (/cad|dwg|import|purge|purge cad/i.test(lower)) {
+    addBot(`
+      <p>Imported CAD drawings (unlike linked CAD) degrade viewport framerates and risk coordinate corruption. I recommend our <strong>Audit &amp; List Imported CAD Elements</strong> script.</p>
+      <p class="text-slate-600 text-[11px] mt-1">It checks every CAD import instance across all sheets and views, highlighting unpinned imports.</p>
+    `);
+    renderContractCard({
+      matchedToolId: 'audit-cad-imports',
+      why: 'Locates imported CAD instances across views to prevent model bloat.',
+      willChange: 'None (Read-only inspection)',
+      needs: 'Active Revit project open'
+    });
+    return;
+  }
+
+  // 5. BIM Health Check & Warnings Intent
+  if (/health|score|audit|warning|diagnostic/i.test(lower)) {
+    addBot(`
+      <p>You can run our comprehensive <strong>BIM Health Check</strong> diagnostic (or click the medical button in the top right corner anytime).</p>
+      <p class="text-slate-600 text-[11px] mt-1">It computes a 0–100 health score inspecting critical warnings, unplaced views, CAD imports, and model metrics.</p>
+    `);
+    renderContractCard({
+      matchedToolId: 'bim-health-check',
+      why: 'Calculates overall BIM health score (0-100) and inspects model warnings.',
+      willChange: 'None (Read-only audit)',
+      needs: 'Active Revit project open'
+    });
+    return;
+  }
+
+  // 6. Central Sync Intent
+  if (/sync|central|compact|save|workset/i.test(lower)) {
+    addBot(`
+      <p>To safely commit your work and maintain central model health, use <strong>Synchronize with Central &amp; Compact</strong>.</p>
+    `);
+    renderContractCard({
+      matchedToolId: 'setup-sync-compact',
+      why: 'Relinquishes worksets, commits model changes, and compacts central file.',
+      willChange: 'Commits local model changes to central repository.',
+      needs: 'Workshared central model open'
+    });
+    return;
+  }
+
+  // 7. Dynamo Packages Query
+  if (/package|dynamo package|clockwork|rhythm/i.test(lower)) {
+    const installed = context.installedDynamoPackages || [];
+    const missing = getDynamoMissingPackages('Clockwork for Dynamo 2.x, Rhythm');
+    addBot(`
+      <div class="space-y-1.5">
+        <p class="font-bold text-slate-900">Installed Dynamo Packages (${installed.length}):</p>
+        <div class="p-2 bg-slate-100 rounded text-[11px] font-mono text-slate-700 max-h-24 overflow-y-auto">
+          ${installed.length ? installed.join(', ') : 'No custom packages found in AppData/ProgramData.'}
+        </div>
+        ${missing.length > 0 ? `
+          <div class="text-[11.5px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200">
+            <strong>Missing for Central Scripts:</strong> ${esc(missing.join(', '))}<br>
+            <span class="text-[10.5px] text-slate-600">Install via Revit <em>Manage &gt; Dynamo &gt; Packages &gt; Search for a Package...</em></span>
+          </div>
+        ` : `
+          <div class="text-[11.5px] text-emerald-700">✓ All packages required by Central Library are verified!</div>
+        `}
+      </div>
+    `);
+    return;
+  }
+
+  // 8. General Semantic Scoring
+  const words = lower.split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  const scored = tools.filter(t => t.toolId !== 'bim-health-check').map(t => {
     let score = 0;
-    const all = [t.title, t.intendedOutcome, t.description, ...(t.keywords || [])].join(' ').toLowerCase();
+    const all = [t.title, t.name, t.intendedOutcome, t.description, ...(t.keywords || []), ...(t.tags || [])].join(' ').toLowerCase();
     for (const w of words) {
-      if (t.title.toLowerCase().includes(w)) score += 5;
+      if (t.title.toLowerCase().includes(w)) score += 6;
       if (all.includes(w)) score += 2;
     }
     return { t, score };
@@ -1974,21 +2395,25 @@ function respondWithLocalRouter(text) {
 
   if (scored.length > 0) {
     const top = scored[0].t;
+    addBot(`<p>I found an approved automation in our central repository matching <strong>"${esc(text)}"</strong>:</p>`);
     renderContractCard({
       matchedToolId: top.toolId,
-      why: `Matched intent from approved catalog based on "${text}".`,
+      why: top.intendedOutcome || top.description,
       willChange: top.affectedData || (top.safetyLevel === 'ReadOnly' ? 'Read-only analysis.' : 'Modifies model parameters.'),
       needs: top.packagesRequired || 'Active document open.',
       alternatives: scored.length > 1 ? `Alternative: ${scored[1].t.title}` : null
     });
   } else {
     addBot(`
-      <p>I could not find an approved automation for "<em>${esc(text)}</em>" in the catalog.</p>
-      <div class="mt-2 flex items-center gap-2">
-        <button onclick="openSubmitModal('${esc(text).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-xs font-semibold">
+      <p>I checked our Central Library catalog, but we don't have an approved automation matching <strong>"${esc(text)}"</strong> yet.</p>
+      <p class="text-slate-500 text-[11px] mt-1">You can request our BIM computational team to create or approve this tool, or browse our standard categories on the Tools tab.</p>
+      <div class="mt-2.5 flex items-center gap-2">
+        <button onclick="openSubmitModal('${esc(text).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow-2xs">
           Request This Automation
         </button>
-        <button onclick="openSettingsModal()" class="text-xs text-blue-600 hover:underline">Configure AI Key ⚙️</button>
+        <button onclick="switchTab('tools'); backToCategoryHome()" class="text-xs text-blue-600 hover:underline">
+          Browse Categories →
+        </button>
       </div>`);
   }
 }

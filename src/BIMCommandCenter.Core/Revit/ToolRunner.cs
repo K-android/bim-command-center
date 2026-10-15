@@ -147,7 +147,7 @@ namespace BIMCommandCenter.Core.Revit
             );
         }
 
-        private string ResolvePath(string target)
+        public string ResolvePath(string target)
         {
             if (string.IsNullOrWhiteSpace(target)) return target;
             target = Environment.ExpandEnvironmentVariables(target.Trim());
@@ -176,7 +176,7 @@ namespace BIMCommandCenter.Core.Revit
             return Path.IsPathRooted(target) ? target : inCore;
         }
 
-        // ---------------- Dynamo ----------------
+        // ---------------- Dynamo (Dynamo Player) ----------------
 
         private RunResult RunDynamo(UIApplication app, Dictionary<string, object> tool, string dynPath)
         {
@@ -189,8 +189,34 @@ namespace BIMCommandCenter.Core.Revit
                 return RunResult.Fail(pkgCheck.Instructions);
             }
 
-            bool headless = tool.Str("executionMode") == "Headless";
-            return DynamoRunner.Run(app, dynPath, headless);
+            string scriptName = Path.GetFileName(dynPath);
+
+            // Launch Dynamo Player in Revit
+            string[] candidateIds = new[]
+            {
+                "ID_VISUAL_PROGRAMMING_DYNAMOPLAYER",
+                "DynamoPlayer",
+                "CustomCtrl_%CustomCtrl_%Manage%Visual Programming%DynamoPlayer"
+            };
+
+            RevitCommandId playerCmdId = null;
+            foreach (var idStr in candidateIds)
+            {
+                var cmd = RevitCommandId.LookupCommandId(idStr);
+                if (cmd != null && app.CanPostCommand(cmd))
+                {
+                    playerCmdId = cmd;
+                    break;
+                }
+            }
+
+            if (playerCmdId != null)
+            {
+                app.PostCommand(playerCmdId);
+                return RunResult.Success($"Dynamo Player launched.\nSelect \"{scriptName}\" in Dynamo Player to provide inputs and view outputs without opening the node editor.");
+            }
+
+            return RunResult.Fail("Revit cannot post the Dynamo Player command right now (another dialog or transaction may be active). Please open Dynamo Player from the Manage ribbon tab.");
         }
 
         // ---------------- Ribbon buttons (pyRevit + any add-in) ----------------

@@ -110,5 +110,94 @@ namespace BIMCommandCenter.Core.Revit
 
             return result;
         }
+
+        /// <summary>
+        /// Reads a .dyn JSON file and extracts configured Inputs, Outputs, and Package Dependencies.
+        /// </summary>
+        public static DynamoGraphDetails InspectGraph(string dynPath)
+        {
+            var details = new DynamoGraphDetails();
+            if (string.IsNullOrWhiteSpace(dynPath) || !File.Exists(dynPath)) return details;
+
+            try
+            {
+                string json = File.ReadAllText(dynPath);
+
+                // Extract Inputs array objects
+                var inputsMatch = Regex.Match(json, @"""Inputs""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
+                if (inputsMatch.Success)
+                {
+                    var itemMatches = Regex.Matches(inputsMatch.Groups[1].Value, @"\{([^{}]*)\}");
+                    foreach (Match m in itemMatches)
+                    {
+                        string block = m.Groups[1].Value;
+                        string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        string type = Regex.Match(block, @"""Type""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        string val = Regex.Match(block, @"""Value""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        string desc = Regex.Match(block, @"""Description""\s*:\s*""([^""]*)""").Groups[1].Value;
+
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            details.Inputs.Add(new DynamoGraphItem
+                            {
+                                Name = name,
+                                Type = string.IsNullOrWhiteSpace(type) ? "var" : type,
+                                Value = val,
+                                Description = desc
+                            });
+                        }
+                    }
+                }
+
+                // Extract Outputs array objects
+                var outputsMatch = Regex.Match(json, @"""Outputs""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
+                if (outputsMatch.Success)
+                {
+                    var itemMatches = Regex.Matches(outputsMatch.Groups[1].Value, @"\{([^{}]*)\}");
+                    foreach (Match m in itemMatches)
+                    {
+                        string block = m.Groups[1].Value;
+                        string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        string desc = Regex.Match(block, @"""Description""\s*:\s*""([^""]*)""").Groups[1].Value;
+
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            details.Outputs.Add(new DynamoGraphItem
+                            {
+                                Name = name,
+                                Description = desc
+                            });
+                        }
+                    }
+                }
+
+                // Extract Dependencies from NodeLibraryDependencies
+                var depMatches = Regex.Matches(json, @"""Name""\s*:\s*""([^""]*)""\s*,\s*""Version""");
+                foreach (Match dm in depMatches)
+                {
+                    string dep = dm.Groups[1].Value;
+                    if (!string.IsNullOrWhiteSpace(dep) && !details.Dependencies.Contains(dep))
+                        details.Dependencies.Add(dep);
+                }
+            }
+            catch { }
+
+            return details;
+        }
+    }
+
+    public class DynamoGraphItem
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class DynamoGraphDetails
+    {
+        public List<DynamoGraphItem> Inputs { get; set; } = new List<DynamoGraphItem>();
+        public List<DynamoGraphItem> Outputs { get; set; } = new List<DynamoGraphItem>();
+        public List<string> Dependencies { get; set; } = new List<string>();
     }
 }
