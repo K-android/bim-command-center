@@ -42,19 +42,18 @@
       </div>
     </div>
     <div class="flex items-center gap-1 shrink-0">
-      <!-- Corner Medical Button for BIM Health Check -->
-      <button onclick="runBimHealthCheck()" id="btn-header-health" title="BIM Health Check: Audit model integrity, warnings, CAD imports & health score"
-              class="px-2 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1 text-[11px] font-semibold transition shrink-0 group">
-        <i data-lucide="activity" class="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform"></i>
-        <span>Health</span>
+      <!-- Mini Medical '+' Icon Button for BIM Health Check -->
+      <button onclick="runBimHealthCheck()" id="btn-header-health" title="BIM Health Check: Audit model integrity, warnings, CAD imports &amp; health score"
+              class="w-6 h-6 rounded-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-400 border border-rose-500/40 flex items-center justify-center transition shrink-0 group" aria-label="BIM Health Check">
+        <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[2.75] text-rose-400 group-hover:scale-110 transition-transform"></i>
       </button>
 
       <button onclick="openRibbonModal()" title="Manage tools pinned to the Revit ribbon" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
         <i data-lucide="pin" class="w-3.5 h-3.5"></i>
         <span id="ribbon-badge-text">2</span>
       </button>
-      <button onclick="openRegisterModal()" title="Register a script or add-in" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
-        <i data-lucide="plus" class="w-4 h-4"></i>
+      <button onclick="openRegisterModal()" title="Register a script or add-in into Central Library" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+        <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
       </button>
       <button onclick="loadCatalog(true)" title="Refresh catalog" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
         <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
@@ -1446,7 +1445,18 @@ function renderToolCard(t) {
 //  Safe Execution Flow (Blueprint Pages 2-3 & 5)
 // ======================================================================
 function handleToolRun(toolId) {
-  const tool = tools.find(t => t.toolId === toolId);
+  let tool = tools.find(t => t.toolId === toolId);
+  if (!tool && toolId === 'bim-health-check') {
+    tool = {
+      toolId: 'bim-health-check',
+      title: 'BIM Health Check',
+      actionType: 'NativeAddin',
+      targetPath: 'tools/BIMHealthCheck.dll',
+      safetyLevel: 'ReadOnly',
+      category: 'Quality & QA',
+      intendedOutcome: 'Audits model integrity, health score, parameters, warnings, views, CAD imports, and links.'
+    };
+  }
   if (!tool) return;
 
   const isGh = tool.actionType === 'Grasshopper' || tool.actionType === 'Rhino.Inside' || (tool.targetPath && (tool.targetPath.endsWith('.gh') || tool.targetPath.endsWith('.ghx')));
@@ -1630,7 +1640,18 @@ function executeFromPreflight() {
 
 // Universal Tool Runner with Safe Run Contract Result Verification (Blueprint Step 6, 7 & 8)
 async function executeToolConfirmed(toolId) {
-  const tool = tools.find(t => t.toolId === toolId);
+  let tool = tools.find(t => t.toolId === toolId);
+  if (!tool && toolId === 'bim-health-check') {
+    tool = {
+      toolId: 'bim-health-check',
+      title: 'BIM Health Check',
+      actionType: 'NativeAddin',
+      targetPath: 'tools/BIMHealthCheck.dll',
+      safetyLevel: 'ReadOnly',
+      category: 'Quality & QA',
+      intendedOutcome: 'Audits model integrity, health score, parameters, warnings, views, CAD imports, and links.'
+    };
+  }
   if (!tool) return;
 
   toast(`Launching ${tool.title} in Revit...`);
@@ -2235,10 +2256,11 @@ Active Project Context:
 GUIDELINES:
 1. Identify yourself conversationally as Archie. Never mention Antigravity or internal agent names.
 2. For Dynamo (.dyn) graphs, note that they run cleanly via Dynamo Player (inputs & outputs only, no graph editor canvas).
-3. If an approved automation in the Central Library directly solves the user's task, mention it and include this token:
+3. If the user asks for model health, health check, model check, audit, hygiene, or warnings inspection, ALWAYS recommend the approved tool: [TOOL:bim-health-check]. Explain that it audits model elements, warnings, purgeable elements, CAD imports, views, and overall health score.
+4. If an approved automation in the Central Library directly solves the user's task, mention it and include this token:
 [TOOL:exact-toolId]
 Our interactive UI will automatically embed a 1-click execution card for that tool!
-4. If NO approved tool matches the user's request:
+5. If NO approved tool matches the user's request:
    - Provide concrete, expert guidance on how to create or link it!
    - Recommend the ideal platform (Dynamo graph or pyRevit script).
    - Outline the specific Dynamo node chain (e.g. Categories -> All Elements -> Get/Set Parameter) or pyRevit API snippet.
@@ -2316,7 +2338,18 @@ Our interactive UI will automatically embed a 1-click execution card for that to
     const matchedId = toolTokenMatch[1].trim();
     const cleanText = replyText.replace(/\[TOOL:\s*([^\]]+)\]/g, '').trim();
     if (cleanText) addBot(renderMarkdown(cleanText));
-    const foundTool = tools.find(t => t.toolId === matchedId || t.toolId === 'local-' + matchedId || t.toolId.replace(/^local-/, '') === matchedId.replace(/^local-/, ''));
+    const foundTool = tools.find(t => t.toolId === matchedId || t.toolId === 'local-' + matchedId || t.toolId.replace(/^local-/, '') === matchedId.replace(/^local-/, '')) || (matchedId === 'bim-health-check' ? {
+      toolId: 'bim-health-check',
+      title: 'BIM Health Check',
+      category: 'Quality & QA',
+      actionType: 'NativeAddin',
+      targetPath: 'tools/BIMHealthCheck.dll',
+      safetyLevel: 'ReadOnly',
+      status: 'Approved',
+      intendedOutcome: 'Audits model integrity, health score, parameters, warnings, views, CAD imports, and links.',
+      affectedData: 'Read-only analysis (generates comprehensive audit report).',
+      packagesRequired: 'Active Revit project open.'
+    } : null);
     if (foundTool) {
       renderContractCard({
         matchedToolId: foundTool.toolId,
@@ -2324,6 +2357,9 @@ Our interactive UI will automatically embed a 1-click execution card for that to
         willChange: foundTool.affectedData,
         needs: foundTool.packagesRequired
       });
+      if (foundTool.toolId === 'bim-health-check' && /(health|model check|audit|hygiene|check model)/i.test(promptText)) {
+        setTimeout(() => executeToolConfirmed('bim-health-check'), 400);
+      }
       return;
     }
   }
@@ -2353,7 +2389,19 @@ Our interactive UI will automatically embed a 1-click execution card for that to
 
 // Render Routing Response Contract Card
 function renderContractCard(contract) {
-  const tool = tools.find(t => t.toolId === contract.matchedToolId || t.toolId === 'local-' + contract.matchedToolId || t.toolId.replace(/^local-/, '') === (contract.matchedToolId || '').replace(/^local-/, ''));
+  const tool = tools.find(t => t.toolId === contract.matchedToolId || t.toolId === 'local-' + contract.matchedToolId || t.toolId.replace(/^local-/, '') === (contract.matchedToolId || '').replace(/^local-/, '')) || (contract.matchedToolId === 'bim-health-check' ? {
+    toolId: 'bim-health-check',
+    title: 'BIM Health Check',
+    category: 'Quality & QA',
+    actionType: 'NativeAddin',
+    targetPath: 'tools/BIMHealthCheck.dll',
+    safetyLevel: 'ReadOnly',
+    status: 'Approved',
+    version: '1.0',
+    intendedOutcome: 'Audits model integrity, health score, parameters, warnings, views, CAD imports, and links.',
+    affectedData: 'Read-only analysis (generates comprehensive audit report).',
+    packagesRequired: 'Active Revit project open.'
+  } : null);
   if (!tool) {
     addBot(`<p>${esc(contract.why || 'No matching tool found in central library.')}</p>`);
     return;
@@ -2453,9 +2501,49 @@ function respondWithLocalRouter(text) {
     return;
   }
 
-  // 3. Dynamic Tool Matching from loaded central catalog
+  // 3. Model Health & Audit Intent -> Recognise and execute BIM Health Check
+  if (/(health|model check|audit model|model audit|hygiene|model score|check model)/i.test(lower)) {
+    const healthTool = tools.find(t => t.toolId === 'bim-health-check') || {
+      toolId: 'bim-health-check',
+      title: 'BIM Health Check',
+      category: 'Quality & QA',
+      actionType: 'NativeAddin',
+      targetPath: 'tools/BIMHealthCheck.dll',
+      safetyLevel: 'ReadOnly',
+      intendedOutcome: 'Audits model integrity, health score, parameters, warnings, views, CAD imports, and links.',
+      affectedData: 'Read-only analysis (generates comprehensive audit report).',
+      packagesRequired: 'Active Revit project open.',
+      status: 'Approved'
+    };
+
+    addBot(`
+      <div class="space-y-1">
+        <p class="font-semibold text-slate-800">I recognise your request for <strong>Model Health &amp; Audit</strong>.</p>
+        <p class="text-[11.5px] text-slate-600 leading-relaxed">
+          Launching our approved <strong>BIM Health Check</strong> native tool now to perform a complete model audit (integrity, warnings, purgeable elements, CAD imports, views, and overall health score) for <strong>${esc(context.documentTitle || 'the active model')}</strong>:
+        </p>
+      </div>
+    `);
+
+    renderContractCard({
+      matchedToolId: 'bim-health-check',
+      why: healthTool.intendedOutcome || 'Audits model integrity, health score, parameters, warnings, views, and links.',
+      willChange: 'Read-only audit (no model geometry or parameters modified).',
+      needs: 'Active Revit model open.',
+      alternatives: null
+    });
+
+    // Execute automatically in Revit
+    setTimeout(() => {
+      executeToolConfirmed('bim-health-check');
+    }, 350);
+
+    return;
+  }
+
+  // 4. Dynamic Tool Matching from loaded central catalog
   const words = lower.split(/[^a-z0-9]+/).filter(w => w.length > 2);
-  const scored = tools.filter(t => t.toolId !== 'bim-health-check').map(t => {
+  const scored = tools.map(t => {
     let score = 0;
     const all = [t.title, t.name, t.intendedOutcome, t.description, t.category, ...(t.keywords || []), ...(t.tags || [])].join(' ').toLowerCase();
     for (const w of words) {

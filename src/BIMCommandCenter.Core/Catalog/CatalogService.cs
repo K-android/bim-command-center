@@ -53,8 +53,45 @@ namespace BIMCommandCenter.Core.Catalog
 
         public CatalogResult Current => _last;
 
+        private static readonly Dictionary<string, object> IntrinsicBimHealthCheck = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["toolId"] = "bim-health-check",
+            ["title"] = "BIM Health Check",
+            ["category"] = "Quality & QA",
+            ["description"] = "Comprehensive health audit of model elements, warnings, purgeable items, views, links, and CAD imports.",
+            ["intendedOutcome"] = "Audits model integrity, health score, parameters, warnings, views, and links.",
+            ["keywords"] = new List<object> { "health", "check", "audit", "hygiene", "warnings", "purge", "model health", "model check", "quality", "qa", "score" },
+            ["iconName"] = "activity",
+            ["actionType"] = "NativeAddin",
+            ["targetPath"] = "tools/BIMHealthCheck.dll",
+            ["executionMode"] = "Native",
+            ["revitVersions"] = new List<object> { "2023", "2024", "2025", "2026" },
+            ["packagesRequired"] = "None",
+            ["status"] = "Approved",
+            ["canAITrigger"] = true,
+            ["safetyLevel"] = "ReadOnly",
+            ["affectedData"] = "Read-only analysis (generates comprehensive audit report).",
+            ["version"] = "1.0",
+            ["author"] = "BIM Systems"
+        };
+
+        private void EnsureIntrinsicTools(List<Dictionary<string, object>> tools)
+        {
+            if (!tools.Any(t => string.Equals(t.Str("toolId"), "bim-health-check", StringComparison.OrdinalIgnoreCase)))
+            {
+                tools.Add(new Dictionary<string, object>(IntrinsicBimHealthCheck));
+            }
+        }
+
         public Dictionary<string, object> FindTool(string toolId)
         {
+            if (string.Equals(toolId, "bim-health-check", StringComparison.OrdinalIgnoreCase))
+            {
+                var foundHealth = _last?.Tools?.FirstOrDefault(t => string.Equals(t.Str("toolId"), "bim-health-check", StringComparison.OrdinalIgnoreCase));
+                if (foundHealth != null) return foundHealth;
+                return IntrinsicBimHealthCheck;
+            }
+
             if (_last?.Tools == null) return null;
             var found = _last.Tools.FirstOrDefault(t => string.Equals(t.Str("toolId"), toolId, StringComparison.OrdinalIgnoreCase));
             if (found != null) return found;
@@ -92,6 +129,7 @@ namespace BIMCommandCenter.Core.Catalog
 
                 List<Dictionary<string, object>> tools = raw.Select(Normalize).Where(IsUsable).ToList();
                 ScanScriptsRoot(tools);
+                EnsureIntrinsicTools(tools);
 
                 try { File.WriteAllText(CachePath, Json.Stringify(tools)); } catch { }
 

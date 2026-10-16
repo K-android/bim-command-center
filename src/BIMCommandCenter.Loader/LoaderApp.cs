@@ -85,19 +85,22 @@ namespace BIMCommandCenter.Loader
 
             string localRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BIMCommandCenter", "core", year);
 
-            try
+            // Fire-and-forget background update check: NEVER block Revit startup on network I/O (0ms boot impact)
+            _ = Task.Run(() =>
             {
-                // Network paths can hang for ~30s when unreachable: never block Revit startup on them.
-                var check = Task.Run(() => TryPullUpdate(Path.Combine(updateSource, year), localRoot, bundledVersion));
-                if (check.Wait(TimeSpan.FromSeconds(4)) && check.Result != null)
+                try
                 {
-                    LoaderApp.Log("Pulled update into " + check.Result);
+                    string target = TryPullUpdate(Path.Combine(updateSource, year), localRoot, bundledVersion);
+                    if (target != null)
+                    {
+                        LoaderApp.Log("Pulled background update into " + target);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                LoaderApp.Log("Update check failed: " + ex.Message);
-            }
+                catch (Exception ex)
+                {
+                    LoaderApp.Log("Background update check skipped/failed: " + ex.Message);
+                }
+            });
 
             // Use the newest locally cached release if it beats the bundled one.
             string best = bundledCoreDir;
