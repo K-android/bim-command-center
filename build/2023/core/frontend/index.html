@@ -1635,7 +1635,7 @@ function openPreflightModal(toolId) {
 
   if (isDynamo) {
     Bridge.call('getDynamoGraphDetails', { toolId: tool.toolId, targetPath: tool.targetPath })
-      .then(res => {
+      .then(async res => {
         const ioBox = document.getElementById('dynamo-io-preview');
         const badge = document.getElementById('dynamo-input-badge');
         const btn = document.getElementById('preflight-confirm-btn');
@@ -1643,6 +1643,17 @@ function openPreflightModal(toolId) {
 
         const inputs = res.inputs || [];
         const outputs = res.outputs || [];
+        const hasSelection = res.hasSelectionInputs || inputs.some(i => i.isSelection || i.type === 'selection');
+
+        // If selection inputs exist, query active Revit selection
+        let revitSel = null;
+        if (hasSelection) {
+          try {
+            revitSel = await Bridge.call('getRevitSelection');
+          } catch (e) {
+            revitSel = { count: 0, summary: 'Revit selection unavailable', uniqueIds: [] };
+          }
+        }
 
         if (inputs.length === 0) {
           if (badge) badge.textContent = '0 Inputs Required';
@@ -1658,11 +1669,45 @@ function openPreflightModal(toolId) {
           }
         } else {
           if (badge) badge.textContent = `${inputs.length} Input${inputs.length > 1 ? 's' : ''}`;
-          let formHtml = `
-            <div class="text-[10.5px] text-blue-900 font-medium pb-0.5">
-              Adjust graph parameters below before executing:
+          
+          let formHtml = '';
+
+          // If selection is required, display the active Revit selection banner
+          if (hasSelection) {
+            const hasElements = revitSel && revitSel.count > 0;
+            formHtml += `
+              <div id="dyn-revit-selection-banner" class="p-2.5 rounded-lg ${hasElements ? 'bg-emerald-50 border border-emerald-200 text-emerald-950' : 'bg-amber-50 border border-amber-200 text-amber-950'} space-y-1.5 shadow-2xs">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="${hasElements ? 'check-circle-2' : 'mouse-pointer-click'}" class="w-4 h-4 ${hasElements ? 'text-emerald-600' : 'text-amber-600'} shrink-0"></i>
+                    <span class="font-bold text-xs">${hasElements ? 'Active Revit Selection Auto-Bound' : 'Revit Model Elements Required'}</span>
+                  </div>
+                  <span class="text-[9.5px] ${hasElements ? 'bg-emerald-200/80 text-emerald-900' : 'bg-amber-200/80 text-amber-900'} px-2 py-0.5 rounded-full font-semibold">
+                    ${hasElements ? `${revitSel.count} Selected` : '0 Selected'}
+                  </span>
+                </div>
+                <div class="text-[10.5px] leading-snug ${hasElements ? 'text-emerald-800 font-medium' : 'text-amber-900'}">
+                  ${hasElements ? esc(revitSel.summary) : 'This script operates on selected model elements. Select target elements in Revit view and click refresh, or launch Dynamo Player.'}
+                </div>
+                <div class="pt-0.5 flex items-center gap-2">
+                  <button type="button" onclick="refreshPreflightRevitSelection()" class="px-2.5 py-1 ${hasElements ? 'bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100' : 'bg-amber-600 text-white hover:bg-amber-700'} rounded text-[10.5px] font-semibold flex items-center gap-1 shadow-2xs transition">
+                    <i data-lucide="refresh-cw" class="w-3 h-3"></i>Refresh Selection
+                  </button>
+                  ${!hasElements ? `
+                    <button type="button" onclick="launchNativeDynamoPlayer('${tool.toolId}', '${esc(tool.targetPath || '')}')" class="px-2.5 py-1 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded text-[10.5px] font-semibold flex items-center gap-1 transition">
+                      <i data-lucide="external-link" class="w-3 h-3"></i>Pick in Dynamo Player
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }
+
+          formHtml += `
+            <div class="text-[10.5px] text-blue-900 font-medium pb-0.5 pt-1">
+              Adjust parameters below before executing:
             </div>
-            <div class="space-y-2 pt-1 max-h-56 overflow-y-auto scroll pr-1">
+            <div class="space-y-2 max-h-56 overflow-y-auto scroll pr-1">
           `;
 
           inputs.forEach((inp, idx) => {
@@ -1672,6 +1717,7 @@ function openPreflightModal(toolId) {
             const val = inp.value !== undefined && inp.value !== null ? inp.value : '';
             const desc = inp.description || '';
             const options = inp.options || [];
+            const isSel = inp.isSelection || type === 'selection';
 
             formHtml += `
               <div class="p-2 rounded-lg bg-white/90 border border-blue-100 shadow-2xs space-y-1">
@@ -1682,7 +1728,30 @@ function openPreflightModal(toolId) {
                 ${desc ? `<div class="text-[10px] text-slate-500">${esc(desc)}</div>` : ''}
             `;
 
-            if (options && options.length > 0) {
+            if (isSel) {
+              const currentUids = (revitSel && revitSel.uniqueIds && revitSel.uniqueIds.length) ? revitSel.uniqueIds.join(',') : '';
+              formHtml += `
+                <div class="p-1.5 rounded bg-slate-50 border border-slate-200 text-[10.5px] flex items-center justify-between">
+                  <span id="dyn_sel_summary_${esc(inputId)}" class="${currentUids ? 'text-emerald-700 font-medium' : 'text-slate-400 italic'}">
+                    ${currentUids ? `${revitSel.count} elements bound from active Revit selection` : 'Awaiting Revit element selection…'}
+                  </span>
+                  <button type="button" onclick="refreshPreflightRevitSelection()" class="text-[10px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5">
+                    <i data-lucide="refresh-cw" class="w-2.5 h-2.5"></i>Update
+                  </button>
+                </div>
+                <input type="hidden" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" data-is-selection="true" value="${esc(currentUids)}" class="dynamo-script-param">
+              `;
+            } else if (type === 'slider' || (inp.min !== null && inp.max !== null && inp.min !== undefined && inp.max !== undefined)) {
+              const minVal = inp.min ?? 0;
+              const maxVal = inp.max ?? 100;
+              const stepVal = inp.step ?? 1;
+              formHtml += `
+                <div class="flex items-center gap-2 pt-1">
+                  <input type="range" id="dyn_range_${esc(inputId)}" min="${minVal}" max="${maxVal}" step="${stepVal}" value="${esc(val || minVal)}" class="flex-1 accent-blue-600 cursor-pointer" oninput="document.getElementById('dyn_inp_${esc(inputId)}').value = this.value">
+                  <input type="number" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" min="${minVal}" max="${maxVal}" step="${stepVal}" value="${esc(val || minVal)}" class="dynamo-script-param w-16 text-center text-xs p-1 bg-slate-50 border border-slate-200 rounded font-mono font-semibold text-slate-800" oninput="document.getElementById('dyn_range_${esc(inputId)}').value = this.value">
+                </div>
+              `;
+            } else if (options && options.length > 0) {
               formHtml += `
                 <select id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" class="dynamo-script-param w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-1 focus:ring-blue-500 font-medium text-slate-700">
                   ${options.map(opt => `<option value="${esc(opt)}" ${String(opt) === String(val) ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
@@ -1695,6 +1764,15 @@ function openPreflightModal(toolId) {
                   <input type="checkbox" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" class="dynamo-script-param rounded text-blue-600 focus:ring-blue-500 w-4 h-4" ${isChecked ? 'checked' : ''} onchange="this.nextElementSibling.textContent = this.checked ? 'True' : 'False'">
                   <span class="text-xs text-slate-700 font-medium">${isChecked ? 'True' : 'False'}</span>
                 </label>
+              `;
+            } else if (type === 'filepath' || type === 'directorypath') {
+              formHtml += `
+                <div class="relative">
+                  <input type="text" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" value="${esc(val)}" placeholder="C:\\path\\to\\..." class="dynamo-script-param w-full text-xs p-1.5 pr-7 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-1 focus:ring-blue-500 font-mono text-[11px]">
+                  <div class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                    <i data-lucide="${type === 'directorypath' ? 'folder' : 'file'}" class="w-3.5 h-3.5"></i>
+                  </div>
+                </div>
               `;
             } else if (type === 'number' || type === 'double' || type === 'integer' || type === 'int') {
               formHtml += `
@@ -1713,7 +1791,13 @@ function openPreflightModal(toolId) {
           ioBox.innerHTML = formHtml;
 
           if (btn) {
-            btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Inputs';
+            if (hasSelection && (!revitSel || revitSel.count === 0)) {
+              btn.innerHTML = '<i data-lucide="play-circle" class="w-3.5 h-3.5"></i>Launch in Dynamo Player';
+            } else if (hasSelection && revitSel && revitSel.count > 0) {
+              btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Selection';
+            } else {
+              btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Inputs';
+            }
           }
         }
         icons();
@@ -1727,6 +1811,69 @@ function openPreflightModal(toolId) {
   }
 }
 
+async function refreshPreflightRevitSelection() {
+  if (!selectedToolForPreflight) return;
+  const tool = selectedToolForPreflight;
+  toast('Checking active Revit selection…');
+  try {
+    const sel = await Bridge.call('getRevitSelection');
+    const banner = document.getElementById('dyn-revit-selection-banner');
+    const btn = document.getElementById('preflight-confirm-btn');
+    const hiddenInputs = document.querySelectorAll('input.dynamo-script-param[data-is-selection="true"]');
+    
+    if (sel.count > 0) {
+      toast(`Found ${sel.count} element(s) selected in Revit!`);
+      hiddenInputs.forEach(el => {
+        el.value = (sel.uniqueIds || []).join(',');
+        const label = document.getElementById(`dyn_sel_summary_${el.getAttribute('data-dyn-id')}`);
+        if (label) {
+          label.textContent = `${sel.count} elements bound from active Revit selection`;
+          label.className = 'text-[10.5px] text-emerald-700 font-medium';
+        }
+      });
+      if (banner) {
+        banner.className = 'p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-1.5 shadow-2xs';
+        banner.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+              <span class="font-bold text-xs">Active Revit Selection Auto-Bound</span>
+            </div>
+            <span class="text-[9.5px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full font-semibold">
+              ${sel.count} Selected
+            </span>
+          </div>
+          <div class="text-[10.5px] text-emerald-800 font-medium leading-snug">${esc(sel.summary)}</div>
+          <div class="pt-0.5 flex items-center gap-2">
+            <button type="button" onclick="refreshPreflightRevitSelection()" class="px-2.5 py-1 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded text-[10.5px] font-semibold flex items-center gap-1 shadow-2xs transition">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i>Refresh Selection
+            </button>
+          </div>
+        `;
+      }
+      if (btn) {
+        btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Selection';
+      }
+    } else {
+      toast('No elements currently selected in Revit model.', true);
+      hiddenInputs.forEach(el => {
+        el.value = '';
+        const label = document.getElementById(`dyn_sel_summary_${el.getAttribute('data-dyn-id')}`);
+        if (label) {
+          label.textContent = 'Awaiting Revit element selection…';
+          label.className = 'text-[10.5px] text-slate-400 italic';
+        }
+      });
+      if (btn) {
+        btn.innerHTML = '<i data-lucide="play-circle" class="w-3.5 h-3.5"></i>Launch in Dynamo Player';
+      }
+    }
+    icons();
+  } catch (err) {
+    toast('Could not query Revit selection: ' + err.message, true);
+  }
+}
+
 function closePreflightModal() {
   document.getElementById('preflight-modal').classList.add('hidden');
   selectedToolForPreflight = null;
@@ -1736,6 +1883,16 @@ function executeFromPreflight() {
   if (!selectedToolForPreflight) return;
   const tool = selectedToolForPreflight;
   const toolId = tool.toolId;
+
+  // Check if this script has selection inputs with 0 elements selected
+  if (tool.actionType === 'Dynamo') {
+    const selInput = document.querySelector('input.dynamo-script-param[data-is-selection="true"]');
+    if (selInput && !selInput.value) {
+      // Prompt user or launch in Dynamo Player directly
+      launchNativeDynamoPlayer(tool.toolId, tool.targetPath);
+      return;
+    }
+  }
 
   // Collect any Dynamo parameters if present
   let dynamoInputs = null;

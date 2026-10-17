@@ -206,6 +206,7 @@ namespace BIMCommandCenter.Core.UI
                     return new Dictionary<string, object>
                     {
                         ["path"] = resolved,
+                        ["hasSelectionInputs"] = details.HasSelectionInputs,
                         ["inputs"] = details.Inputs.Select(i => new Dictionary<string, object>
                         {
                             ["id"] = i.Id,
@@ -213,7 +214,11 @@ namespace BIMCommandCenter.Core.UI
                             ["type"] = i.Type,
                             ["value"] = i.Value,
                             ["description"] = i.Description,
-                            ["options"] = i.Options
+                            ["options"] = i.Options,
+                            ["isSelection"] = i.IsSelection,
+                            ["min"] = i.Min,
+                            ["max"] = i.Max,
+                            ["step"] = i.Step
                         }).ToList(),
                         ["outputs"] = details.Outputs.Select(o => new Dictionary<string, object>
                         {
@@ -222,6 +227,59 @@ namespace BIMCommandCenter.Core.UI
                         }).ToList(),
                         ["dependencies"] = details.Dependencies
                     };
+                }
+
+                case "getRevitSelection":
+                {
+                    var selResult = await _s.Dispatcher.InvokeAsync(app =>
+                    {
+                        var uidoc = app.ActiveUIDocument;
+                        if (uidoc == null || uidoc.Document == null)
+                        {
+                            return new Dictionary<string, object>
+                            {
+                                ["count"] = 0,
+                                ["summary"] = "No active Revit project",
+                                ["elements"] = new List<object>(),
+                                ["uniqueIds"] = new List<string>()
+                            };
+                        }
+
+                        var doc = uidoc.Document;
+                        var selIds = uidoc.Selection.GetElementIds();
+                        var elements = new List<Dictionary<string, object>>();
+                        var catCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                        foreach (var id in selIds)
+                        {
+                            var elem = doc.GetElement(id);
+                            if (elem == null) continue;
+                            string cat = elem.Category?.Name ?? "Element";
+                            if (!catCounts.ContainsKey(cat)) catCounts[cat] = 0;
+                            catCounts[cat]++;
+
+                            elements.Add(new Dictionary<string, object>
+                            {
+                                ["id"] = id.ToString(),
+                                ["uniqueId"] = elem.UniqueId,
+                                ["name"] = elem.Name ?? "",
+                                ["category"] = cat
+                            });
+                        }
+
+                        string summary = elements.Count == 0
+                            ? "No elements selected in Revit"
+                            : string.Join(", ", catCounts.Select(kv => $"{kv.Value} {kv.Key}")) + $" ({elements.Count} total)";
+
+                        return new Dictionary<string, object>
+                        {
+                            ["count"] = elements.Count,
+                            ["summary"] = summary,
+                            ["elements"] = elements,
+                            ["uniqueIds"] = elements.Select(e => e["uniqueId"]).ToList()
+                        };
+                    });
+                    return selResult;
                 }
 
                 case "submitIdea":
