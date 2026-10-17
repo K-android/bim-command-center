@@ -304,8 +304,11 @@
       <div id="preflight-content" class="p-4 space-y-3 overflow-y-auto scroll flex-1 text-xs"></div>
 
       <div class="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
-        <button type="button" onclick="closePreflightModal()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800 transition font-medium">Cancel</button>
+        <div id="preflight-dynamo-fallback">
+          <button type="button" onclick="closePreflightModal()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800 transition font-medium">Cancel</button>
+        </div>
         <div class="flex items-center gap-2">
+          <button id="preflight-cancel-btn" type="button" onclick="closePreflightModal()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800 transition font-medium hidden">Cancel</button>
           <button id="preflight-confirm-btn" onclick="executeFromPreflight()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3.5 py-1.5 rounded-lg text-xs inline-flex items-center gap-1.5 shadow-sm transition">
             <i data-lucide="play" class="w-3.5 h-3.5"></i>Confirm & Run
           </button>
@@ -1474,6 +1477,12 @@ function handleToolRun(toolId) {
     return;
   }
 
+  // Dynamo scripts open preflight modal for parameter inspection & headless execution
+  if (isDynamo) {
+    openPreflightModal(toolId);
+    return;
+  }
+
   // Step 5: Modifying operations MUST show preflight confirmation
   if (tool.safetyLevel === 'Modifying' || !tool.safetyLevel) {
     openPreflightModal(toolId);
@@ -1504,7 +1513,7 @@ function openPreflightModal(toolId) {
       <div class="flex items-center justify-between gap-2">
         <h3 class="font-bold text-sm text-slate-900 leading-tight">${esc(tool.title)}</h3>
         <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full border ${isDynamo ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-700 border-slate-200'} shrink-0">
-          ${isDynamo ? 'Dynamo Player' : tool.actionType}
+          ${isDynamo ? 'Dynamo Script' : tool.actionType}
         </span>
       </div>
       <p class="text-slate-500 text-[11px] mt-1 leading-snug">${esc(tool.intendedOutcome || tool.description || 'Enterprise BIM automation')}</p>
@@ -1526,18 +1535,21 @@ function openPreflightModal(toolId) {
       </div>
     </div>
 
-    <!-- Dynamo Player Clean Notice -->
+    <!-- Dynamo Execution & Parameters Container -->
     ${isDynamo ? `
-      <div class="p-2.5 rounded-lg bg-blue-50/60 border border-blue-200/80 text-[11px] text-blue-900 space-y-1">
-        <div class="font-semibold text-blue-950 flex items-center gap-1.5">
-          <i data-lucide="play-circle" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i>
-          <span>Dynamo Player Mode</span>
+      <div id="dynamo-player-box" class="p-3 rounded-xl bg-blue-50/60 border border-blue-200/80 text-[11px] text-blue-900 space-y-2">
+        <div class="font-semibold text-blue-950 flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="sliders" class="w-3.5 h-3.5 text-blue-600 shrink-0"></i>
+            <span>Dynamo Player Controls</span>
+          </div>
+          <span id="dynamo-input-badge" class="text-[10px] bg-blue-100/80 text-blue-800 px-2 py-0.5 rounded-full font-medium">Inspecting...</span>
         </div>
-        <p class="text-blue-800 leading-snug">
-          Runs through <strong>Dynamo Player</strong> with parameter inputs &amp; outputs only (no canvas clutter).
-        </p>
-        <div id="dynamo-io-preview" class="pt-1 text-[10px] text-blue-600/80 italic">
-          Inspecting graph inputs &amp; outputs…
+        <div id="dynamo-io-preview" class="text-[11px] text-blue-800 space-y-2">
+          <div class="flex items-center gap-2 text-blue-600/80 py-1">
+            <i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i>
+            <span>Inspecting graph inputs and outputs...</span>
+          </div>
         </div>
       </div>
     ` : ''}
@@ -1564,8 +1576,8 @@ function openPreflightModal(toolId) {
       </div>
     ` : ''}
 
-    <!-- Clean Parameters (if any) -->
-    ${(tool.parameters && tool.parameters.length) ? `
+    <!-- Clean Parameters (if any for non-Dynamo) -->
+    ${(!isDynamo && tool.parameters && tool.parameters.length) ? `
       <div class="space-y-1.5 pt-1">
         <div class="font-semibold text-slate-700 text-[11px]">Input Parameters</div>
         <div class="space-y-2">
@@ -1591,11 +1603,31 @@ function openPreflightModal(toolId) {
 
   document.getElementById('preflight-content').innerHTML = html;
   
+  const fallbackDiv = document.getElementById('preflight-dynamo-fallback');
+  const cancelBtn = document.getElementById('preflight-cancel-btn');
   const confirmBtn = document.getElementById('preflight-confirm-btn');
-  if (confirmBtn) {
-    confirmBtn.innerHTML = isDynamo 
-      ? '<i data-lucide="play" class="w-3.5 h-3.5"></i>Launch Dynamo Player'
-      : `<i data-lucide="play" class="w-3.5 h-3.5"></i>${isModifying ? 'Confirm & Run' : 'Run Now'}`;
+
+  if (isDynamo) {
+    if (fallbackDiv) {
+      fallbackDiv.innerHTML = `
+        <button type="button" onclick="launchNativeDynamoPlayer('${tool.toolId}', '${esc(tool.targetPath || '')}')" class="text-[11px] text-slate-500 hover:text-blue-600 transition flex items-center gap-1 py-1 font-medium" title="Launch the native Autodesk Dynamo Player palette instead of in-app player">
+          <i data-lucide="external-link" class="w-3 h-3"></i>
+          <span>Open in Dynamo Player</span>
+        </button>
+      `;
+    }
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+    if (confirmBtn) {
+      confirmBtn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run in Revit';
+    }
+  } else {
+    if (fallbackDiv) {
+      fallbackDiv.innerHTML = `<button type="button" onclick="closePreflightModal()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800 transition font-medium">Cancel</button>`;
+    }
+    if (cancelBtn) cancelBtn.classList.add('hidden');
+    if (confirmBtn) {
+      confirmBtn.innerHTML = `<i data-lucide="play" class="w-3.5 h-3.5"></i>${isModifying ? 'Confirm & Run' : 'Run Now'}`;
+    }
   }
 
   document.getElementById('preflight-modal').classList.remove('hidden');
@@ -1605,24 +1637,93 @@ function openPreflightModal(toolId) {
     Bridge.call('getDynamoGraphDetails', { toolId: tool.toolId, targetPath: tool.targetPath })
       .then(res => {
         const ioBox = document.getElementById('dynamo-io-preview');
+        const badge = document.getElementById('dynamo-input-badge');
+        const btn = document.getElementById('preflight-confirm-btn');
         if (!ioBox) return;
+
         const inputs = res.inputs || [];
         const outputs = res.outputs || [];
-        if (!inputs.length && !outputs.length) {
-          ioBox.innerHTML = '<span class="text-blue-700/80">Standard Dynamo Player inputs ready.</span>';
-          return;
+
+        if (inputs.length === 0) {
+          if (badge) badge.textContent = '0 Inputs Required';
+          ioBox.innerHTML = `
+            <div class="p-2 rounded bg-white/70 border border-blue-100 text-blue-900 flex items-center gap-2">
+              <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+              <span>No inputs required. Ready for instant 1-click execution in active Revit model.</span>
+            </div>
+            ${outputs.length ? `<div class="text-[10.5px] text-blue-700/80 font-medium">Expected Outputs: ${outputs.map(o => esc(o.name)).join(', ')}</div>` : ''}
+          `;
+          if (btn) {
+            btn.innerHTML = '<i data-lucide="zap" class="w-3.5 h-3.5"></i>Run in Revit';
+          }
+        } else {
+          if (badge) badge.textContent = `${inputs.length} Input${inputs.length > 1 ? 's' : ''}`;
+          let formHtml = `
+            <div class="text-[10.5px] text-blue-900 font-medium pb-0.5">
+              Adjust graph parameters below before executing:
+            </div>
+            <div class="space-y-2 pt-1 max-h-56 overflow-y-auto scroll pr-1">
+          `;
+
+          inputs.forEach((inp, idx) => {
+            const inputId = inp.id || `input_${idx}`;
+            const name = inp.name || `Parameter ${idx + 1}`;
+            const type = (inp.type || 'String').toLowerCase();
+            const val = inp.value !== undefined && inp.value !== null ? inp.value : '';
+            const desc = inp.description || '';
+            const options = inp.options || [];
+
+            formHtml += `
+              <div class="p-2 rounded-lg bg-white/90 border border-blue-100 shadow-2xs space-y-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <label class="font-semibold text-slate-800" for="dyn_inp_${esc(inputId)}">${esc(name)}</label>
+                  <span class="text-[9.5px] text-slate-400 font-mono">${esc(inp.type || 'Value')}</span>
+                </div>
+                ${desc ? `<div class="text-[10px] text-slate-500">${esc(desc)}</div>` : ''}
+            `;
+
+            if (options && options.length > 0) {
+              formHtml += `
+                <select id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" class="dynamo-script-param w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-1 focus:ring-blue-500 font-medium text-slate-700">
+                  ${options.map(opt => `<option value="${esc(opt)}" ${String(opt) === String(val) ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+                </select>
+              `;
+            } else if (type === 'boolean' || type === 'bool') {
+              const isChecked = String(val).toLowerCase() === 'true' || val === true;
+              formHtml += `
+                <label class="flex items-center gap-2 cursor-pointer pt-0.5">
+                  <input type="checkbox" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" class="dynamo-script-param rounded text-blue-600 focus:ring-blue-500 w-4 h-4" ${isChecked ? 'checked' : ''} onchange="this.nextElementSibling.textContent = this.checked ? 'True' : 'False'">
+                  <span class="text-xs text-slate-700 font-medium">${isChecked ? 'True' : 'False'}</span>
+                </label>
+              `;
+            } else if (type === 'number' || type === 'double' || type === 'integer' || type === 'int') {
+              formHtml += `
+                <input type="number" step="any" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" value="${esc(val)}" class="dynamo-script-param w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-1 focus:ring-blue-500 font-mono text-[11px]">
+              `;
+            } else {
+              formHtml += `
+                <input type="text" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" value="${esc(val)}" class="dynamo-script-param w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-1 focus:ring-blue-500 font-mono text-[11px]">
+              `;
+            }
+
+            formHtml += `</div>`;
+          });
+
+          formHtml += `</div>`;
+          ioBox.innerHTML = formHtml;
+
+          if (btn) {
+            btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Inputs';
+          }
         }
-        let ioHtml = '<div class="space-y-0.5 pt-0.5">';
-        if (inputs.length) {
-          ioHtml += `<div class="font-medium text-blue-950">Inputs (${inputs.length}): ${inputs.map(i => esc(i.name)).join(', ')}</div>`;
-        }
-        if (outputs.length) {
-          ioHtml += `<div class="font-medium text-blue-950">Outputs (${outputs.length}): ${outputs.map(o => esc(o.name)).join(', ')}</div>`;
-        }
-        ioHtml += '</div>';
-        ioBox.innerHTML = ioHtml;
+        icons();
       })
-      .catch(() => {});
+      .catch(err => {
+        const ioBox = document.getElementById('dynamo-io-preview');
+        if (ioBox) {
+          ioBox.innerHTML = `<div class="text-[10px] text-slate-500 italic">Ready for direct execution in Revit.</div>`;
+        }
+      });
   }
 }
 
@@ -1633,13 +1734,53 @@ function closePreflightModal() {
 
 function executeFromPreflight() {
   if (!selectedToolForPreflight) return;
-  const toolId = selectedToolForPreflight.toolId;
+  const tool = selectedToolForPreflight;
+  const toolId = tool.toolId;
+
+  // Collect any Dynamo parameters if present
+  let dynamoInputs = null;
+  const paramEls = document.querySelectorAll('.dynamo-script-param');
+  if (paramEls && paramEls.length > 0) {
+    dynamoInputs = {};
+    paramEls.forEach(el => {
+      const id = el.getAttribute('data-dyn-id') || el.id;
+      if (!id) return;
+      if (el.type === 'checkbox') {
+        dynamoInputs[id] = el.checked ? 'true' : 'false';
+      } else {
+        dynamoInputs[id] = el.value !== undefined ? el.value : '';
+      }
+    });
+  }
+
+  // Also collect any standard tool.parameters if present
+  const stdParamEls = document.querySelectorAll('.preflight-param');
+  let stdParams = null;
+  if (stdParamEls && stdParamEls.length > 0) {
+    stdParams = {};
+    stdParamEls.forEach(el => {
+      const name = el.getAttribute('data-param');
+      if (name) stdParams[name] = el.value;
+    });
+  }
+
   closePreflightModal();
-  executeToolConfirmed(toolId);
+  executeToolConfirmed(toolId, dynamoInputs || stdParams);
+}
+
+async function launchNativeDynamoPlayer(toolId, targetPath) {
+  closePreflightModal();
+  toast('Opening Autodesk Dynamo Player...');
+  try {
+    const res = await Bridge.call('launchDynamoPlayer', { toolId, targetPath });
+    toast(res.message || 'Opened Dynamo Player');
+  } catch (err) {
+    toast('Could not open Dynamo Player: ' + err.message, true);
+  }
 }
 
 // Universal Tool Runner with Safe Run Contract Result Verification (Blueprint Step 6, 7 & 8)
-async function executeToolConfirmed(toolId) {
+async function executeToolConfirmed(toolId, inputs = null) {
   let tool = tools.find(t => t.toolId === toolId);
   if (!tool && toolId === 'bim-health-check') {
     tool = {
@@ -1657,7 +1798,11 @@ async function executeToolConfirmed(toolId) {
   toast(`Launching ${tool.title} in Revit...`);
 
   try {
-    const res = await Bridge.call('executeTool', { toolId });
+    const payload = { toolId };
+    if (inputs && Object.keys(inputs).length > 0) {
+      payload.inputs = inputs;
+    }
+    const res = await Bridge.call('executeTool', payload);
     // Record to activity history in case of browser fallback
     recordActivityLocal(tool, res);
     showExecutionResult(tool, res);

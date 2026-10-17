@@ -146,14 +146,35 @@ namespace BIMCommandCenter.Core.UI
                         throw new InvalidOperationException("Tool \"" + toolId + "\" is not in the catalog.");
                     Log.Write("Execute " + toolId + " by " + Environment.UserName);
 
+                    Dictionary<string, string> inputs = null;
+                    if (payload.ContainsKey("inputs") && payload["inputs"] is Dictionary<string, object> rawInputs)
+                    {
+                        inputs = rawInputs.ToDictionary(k => k.Key, v => v.Value?.ToString() ?? "");
+                    }
+
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    RunResult result = await _s.Dispatcher.InvokeAsync(app => _s.Runner.Run(app, tool));
+                    RunResult result = await _s.Dispatcher.InvokeAsync(app => _s.Runner.Run(app, tool, inputs));
                     sw.Stop();
                     result.DurationSeconds = Math.Round(sw.Elapsed.TotalSeconds, 2);
 
                     // Record to audit trail
                     RecordRunAudit(tool, result, payload);
 
+                    return result.ToDictionary();
+                }
+
+                case "launchDynamoPlayer":
+                {
+                    string toolId = payload.Str("toolId");
+                    string targetPath = payload.Str("targetPath");
+                    if (_s.Catalog.Current == null) await _s.Catalog.GetAsync(false);
+                    var tool = _s.Catalog.FindTool(toolId);
+                    if (tool != null && string.IsNullOrEmpty(targetPath))
+                    {
+                        targetPath = tool.Str("targetPath");
+                    }
+                    string resolved = _s.Runner.ResolvePath(targetPath);
+                    RunResult result = await _s.Dispatcher.InvokeAsync(app => _s.Runner.LaunchDynamoPlayer(app, resolved, tool));
                     return result.ToDictionary();
                 }
 
@@ -187,10 +208,12 @@ namespace BIMCommandCenter.Core.UI
                         ["path"] = resolved,
                         ["inputs"] = details.Inputs.Select(i => new Dictionary<string, object>
                         {
+                            ["id"] = i.Id,
                             ["name"] = i.Name,
                             ["type"] = i.Type,
                             ["value"] = i.Value,
-                            ["description"] = i.Description
+                            ["description"] = i.Description,
+                            ["options"] = i.Options
                         }).ToList(),
                         ["outputs"] = details.Outputs.Select(o => new Dictionary<string, object>
                         {

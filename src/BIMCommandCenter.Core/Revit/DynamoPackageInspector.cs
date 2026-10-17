@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using BIMCommandCenter.Core.Infrastructure;
 
 namespace BIMCommandCenter.Core.Revit
 {
@@ -125,6 +126,7 @@ namespace BIMCommandCenter.Core.Revit
 
         /// <summary>
         /// Reads a .dyn JSON file and extracts configured Inputs, Outputs, and Package Dependencies.
+        /// Supports both Dynamo Player schema ("Inputs": [...]) and standard Dynamo node schema ("IsInput": true).
         /// </summary>
         public static DynamoGraphDetails InspectGraph(string dynPath)
         {
@@ -135,7 +137,7 @@ namespace BIMCommandCenter.Core.Revit
             {
                 string json = File.ReadAllText(dynPath);
 
-                // Extract Inputs array objects
+                // 1. Extract Inputs array objects (Dynamo Player schema)
                 var inputsMatch = Regex.Match(json, @"""Inputs""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
                 if (inputsMatch.Success)
                 {
@@ -143,6 +145,7 @@ namespace BIMCommandCenter.Core.Revit
                     foreach (Match m in itemMatches)
                     {
                         string block = m.Groups[1].Value;
+                        string id = Regex.Match(block, @"""Id""\s*:\s*""([^""]*)""").Groups[1].Value;
                         string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
                         string type = Regex.Match(block, @"""Type""\s*:\s*""([^""]*)""").Groups[1].Value;
                         string val = Regex.Match(block, @"""Value""\s*:\s*""([^""]*)""").Groups[1].Value;
@@ -152,8 +155,9 @@ namespace BIMCommandCenter.Core.Revit
                         {
                             details.Inputs.Add(new DynamoGraphItem
                             {
+                                Id = string.IsNullOrWhiteSpace(id) ? name : id,
                                 Name = name,
-                                Type = string.IsNullOrWhiteSpace(type) ? "var" : type,
+                                Type = string.IsNullOrWhiteSpace(type) ? "string" : type.ToLowerInvariant(),
                                 Value = val,
                                 Description = desc
                             });
@@ -161,7 +165,51 @@ namespace BIMCommandCenter.Core.Revit
                     }
                 }
 
-                // Extract Outputs array objects
+                // 2. If no Player inputs found, scan standard Nodes array for "IsInput": true
+                if (details.Inputs.Count == 0)
+                {
+                    var nodeMatches = Regex.Matches(json, @"\{[^{}]*""IsInput""\s*:\s*true[^{}]*\}", RegexOptions.Singleline);
+                    foreach (Match nm in nodeMatches)
+                    {
+                        string block = nm.Value;
+                        string id = Regex.Match(block, @"""Id""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        string val = Regex.Match(block, @"""InputValue""\s*:\s*""?([^"",\}]+)""?").Groups[1].Value;
+                        string concreteType = Regex.Match(block, @"""ConcreteType""\s*:\s*""([^""]*)""").Groups[1].Value;
+
+                        string type = "string";
+                        if (concreteType.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            concreteType.IndexOf("number", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            concreteType.IndexOf("double", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            concreteType.IndexOf("integer", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            type = "number";
+                        }
+                        else if (concreteType.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            type = "boolean";
+                        }
+                        else if (concreteType.IndexOf("file", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("path", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            type = "filepath";
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(name) && !details.Inputs.Any(i => i.Id == id))
+                        {
+                            details.Inputs.Add(new DynamoGraphItem
+                            {
+                                Id = id,
+                                Name = name,
+                                Type = type,
+                                Value = val,
+                                Description = "Dynamo node input"
+                            });
+                        }
+                    }
+                }
+
+                // 3. Extract Outputs array objects
                 var outputsMatch = Regex.Match(json, @"""Outputs""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
                 if (outputsMatch.Success)
                 {
@@ -183,7 +231,7 @@ namespace BIMCommandCenter.Core.Revit
                     }
                 }
 
-                // Extract Dependencies from NodeLibraryDependencies
+                // 4. Extract Dependencies from NodeLibraryDependencies
                 var depMatches = Regex.Matches(json, @"""Name""\s*:\s*""([^""]*)""\s*,\s*""Version""");
                 foreach (Match dm in depMatches)
                 {
@@ -192,18 +240,81 @@ namespace BIMCommandCenter.Core.Revit
                         details.Dependencies.Add(dep);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Write("InspectGraph failed for " + dynPath + ": " + ex.Message);
+            }
 
             return details;
+        }
+
+        /// <summary>
+        /// Injects custom parameter values into a Dynamo .dyn file and saves a temporary copy
+        /// for isolated headless execution without altering the central original file.
+        /// </summary>
+        public static string CreateTempGraphWithInputs(string dynPath, Dictionary<string, string> inputOverrides)
+        {
+            if (string.IsNullOrWhiteSpace(dynPath) || !File.Exists(dynPath)) return dynPath;
+            if (inputOverrides == null || inputOverrides.Count == 0) return dynPath;
+
+            try
+            {
+                string json = File.ReadAllText(dynPath);
+
+                foreach (var kvp in inputOverrides)
+                {
+                    string key = kvp.Key;
+                    string val = kvp.Value ?? "";
+
+                    // 1. Update in Inputs array by Id
+                    string idPattern = @"(\{\s*""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""Value""\s*:\s*"")([^""]*)("".*?\})";
+                    if (Regex.IsMatch(json, idPattern, RegexOptions.Singleline))
+                    {
+                        json = Regex.Replace(json, idPattern, "${1}" + val.Replace("$", "$$") + "${3}", RegexOptions.Singleline);
+                    }
+                    else
+                    {
+                        // Match in Inputs array by Name
+                        string namePattern = @"(\{\s*""Name""\s*:\s*""" + Regex.Escape(key) + @""".*?""Value""\s*:\s*"")([^""]*)("".*?\})";
+                        if (Regex.IsMatch(json, namePattern, RegexOptions.Singleline))
+                        {
+                            json = Regex.Replace(json, namePattern, "${1}" + val.Replace("$", "$$") + "${3}", RegexOptions.Singleline);
+                        }
+                    }
+
+                    // 2. Update in Nodes array by Id
+                    string nodePattern = @"(""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""InputValue""\s*:\s*)([^,\}\s]+)";
+                    if (Regex.IsMatch(json, nodePattern, RegexOptions.Singleline))
+                    {
+                        string formattedVal = (val == "true" || val == "false" || double.TryParse(val, out _))
+                            ? val
+                            : "\"" + val.Replace("\"", "\\\"") + "\"";
+                        json = Regex.Replace(json, nodePattern, "${1}" + formattedVal, RegexOptions.Singleline);
+                    }
+                }
+
+                string tempDir = Path.Combine(Path.GetTempPath(), "BIMCommandCenter", "DynamoExec");
+                Directory.CreateDirectory(tempDir);
+                string tempPath = Path.Combine(tempDir, Path.GetFileNameWithoutExtension(dynPath) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".dyn");
+                File.WriteAllText(tempPath, json);
+                return tempPath;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("CreateTempGraphWithInputs error: " + ex.Message);
+                return dynPath;
+            }
         }
     }
 
     public class DynamoGraphItem
     {
+        public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
         public string Value { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        public List<string> Options { get; set; } = new List<string>();
     }
 
     public class DynamoGraphDetails

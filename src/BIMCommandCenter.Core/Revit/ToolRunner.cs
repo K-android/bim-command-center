@@ -67,7 +67,7 @@ namespace BIMCommandCenter.Core.Revit
         private readonly AppConfig _config;
         public ToolRunner(AppConfig config) => _config = config;
 
-        public RunResult Run(UIApplication app, Dictionary<string, object> tool)
+        public RunResult Run(UIApplication app, Dictionary<string, object> tool, Dictionary<string, string> inputs = null)
         {
             string actionType = tool.Str("actionType");
             string target = tool.Str("targetPath");
@@ -79,7 +79,7 @@ namespace BIMCommandCenter.Core.Revit
             switch (actionType)
             {
                 case "Dynamo":
-                    return RunDynamo(app, tool, ResolvePath(target));
+                    return RunDynamo(app, tool, ResolvePath(target), inputs);
                 case "PyRevit":
                     return RunRibbonCommand(app, target, title);
                 case "NativeAddin":
@@ -177,9 +177,9 @@ namespace BIMCommandCenter.Core.Revit
             return Path.IsPathRooted(target) ? target : inCore;
         }
 
-        // ---------------- Dynamo (Dynamo Player) ----------------
+        // ---------------- Dynamo (Direct Headless & Parameter Injection) ----------------
 
-        private RunResult RunDynamo(UIApplication app, Dictionary<string, object> tool, string dynPath)
+        private RunResult RunDynamo(UIApplication app, Dictionary<string, object> tool, string dynPath, Dictionary<string, string> userInputs = null)
         {
             if (string.IsNullOrWhiteSpace(dynPath) || !File.Exists(dynPath))
             {
@@ -199,8 +199,53 @@ namespace BIMCommandCenter.Core.Revit
             var pkgCheck = DynamoPackageInspector.CheckPackages(tool.Str("packagesRequired"));
             string scriptName = Path.GetFileName(dynPath);
 
-            // User requested: run Dynamo Player which gives inputs and outputs only.
-            // Ensure folder is registered in DynamoSettings.xml so Dynamo Player displays it immediately
+            // If user explicitly requested opening Dynamo Player UI via fallback button
+            if (userInputs != null && userInputs.ContainsKey("__open_in_player__"))
+            {
+                return LaunchDynamoPlayer(app, dynPath, tool, pkgCheck);
+            }
+
+            // Step 1 & Step 3: Direct Headless Execution with Parameter Injection!
+            // No Dynamo Player sample folder confusion. Clean, silent execution directly in Revit.
+            string pathToExecute = dynPath;
+            bool isTemp = false;
+
+            if (userInputs != null && userInputs.Count > 0)
+            {
+                string temp = DynamoPackageInspector.CreateTempGraphWithInputs(dynPath, userInputs);
+                if (!string.IsNullOrEmpty(temp) && temp != dynPath && File.Exists(temp))
+                {
+                    pathToExecute = temp;
+                    isTemp = true;
+                }
+            }
+
+            try
+            {
+                Log.Write($"Running Dynamo script '{scriptName}' headlessly via DynamoRevit journal automation.");
+                var runRes = DynamoRunner.Run(app, pathToExecute, headless: true);
+                if (pkgCheck.HasMissing)
+                {
+                    runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
+                }
+                return runRes;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Headless Dynamo execution exception: " + ex.Message);
+                return RunResult.Fail("Error executing " + scriptName + ": " + ex.Message);
+            }
+            finally
+            {
+                if (isTemp)
+                {
+                    try { File.Delete(pathToExecute); } catch { }
+                }
+            }
+        }
+
+        public RunResult LaunchDynamoPlayer(UIApplication app, string dynPath, Dictionary<string, object> tool = null, DynamoPackageCheckResult pkgCheck = null)
+        {
             try
             {
                 string scriptDir = Path.GetDirectoryName(dynPath);
@@ -211,7 +256,6 @@ namespace BIMCommandCenter.Core.Revit
                 Log.Write("EnsureFolderInDynamoSettings failed: " + ex.Message);
             }
 
-            // 1. Try launching Dynamo Player in Revit (Revit's internal ID is ID_PLAYLIST_DYNAMO)
             string[] candidateIds = new[]
             {
                 "ID_PLAYLIST_DYNAMO",
@@ -223,20 +267,16 @@ namespace BIMCommandCenter.Core.Revit
                 "ID_VISUAL_PROGRAMMING_DYNAMOPLAYER"
             };
 
-            bool playerLaunched = false;
             foreach (var idStr in candidateIds)
             {
                 var cmd = RevitCommandId.LookupCommandId(idStr);
-                if (cmd != null)
+                if (cmd != null && app.CanPostCommand(cmd))
                 {
                     try
                     {
-                        if (app.CanPostCommand(cmd))
-                        {
-                            app.PostCommand(cmd);
-                            playerLaunched = true;
-                            break;
-                        }
+                        app.PostCommand(cmd);
+                        _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
+                        return RunResult.Success($"Opened Dynamo Player for \"{Path.GetFileName(dynPath)}\".");
                     }
                     catch (Exception ex)
                     {
@@ -245,41 +285,7 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            if (playerLaunched)
-            {
-                // Asynchronously send POST /graph/open to Dynamo Player's local REST server
-                // so it directly navigates to this script and opens its inputs and outputs
-                _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
-
-                var res = RunResult.Success($"Dynamo Player opened \"{scriptName}\".\nConfigure inputs and review outputs in Dynamo Player without opening the node editor.");
-                if (pkgCheck.HasMissing)
-                {
-                    res.Warnings.Add("Note: Missing package(s) detected: " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
-                }
-                return res;
-            }
-
-            // 2. Headless execution if configured
-            string mode = tool.Str("executionMode");
-            if (string.Equals(mode, "Headless", StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    var runRes = DynamoRunner.Run(app, dynPath, true);
-                    if (pkgCheck.HasMissing)
-                    {
-                        runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing));
-                    }
-                    return runRes;
-                }
-                catch (Exception ex)
-                {
-                    return RunResult.Fail("Could not execute Dynamo graph: " + ex.Message);
-                }
-            }
-
-            // 3. If Dynamo Player could not be posted automatically (e.g. active transaction or ribbon locked)
-            return RunResult.Fail("Dynamo Player command ('ID_PLAYLIST_DYNAMO') is busy or another transaction is active in Revit.\n\nPlease click 'Dynamo Player' on the Manage ribbon tab to view inputs and outputs.");
+            return RunResult.Fail("Dynamo Player command ('ID_PLAYLIST_DYNAMO') is busy or another transaction is active in Revit.");
         }
 
         // ---------------- Ribbon buttons (pyRevit + any add-in) ----------------
