@@ -1,0 +1,446 @@
+{
+  "schemaVersion": "2.0",
+  "updatedAt": "2026-10-17T20:53:21.954Z",
+  "updatedBy": "L4",
+  "settings": {
+    "requireLoginInRevit": true,
+    "allowWindowsAutoSso": true,
+    "defaultUnconfiguredScriptState": "Published",
+    "enforcePreflightForJunior": true
+  },
+  "roles": [
+    {
+      "id": "Admin",
+      "name": "BIM Lead / Admin",
+      "badgeColor": "purple",
+      "level": 4,
+      "description": "Full access to Control Room, Staging scripts, and all production tools."
+    },
+    {
+      "id": "Coordinator",
+      "name": "BIM Coordinator",
+      "badgeColor": "blue",
+      "level": 3,
+      "description": "Access to model audit, batch coordination, and modifying automations."
+    },
+    {
+      "id": "SeniorModeler",
+      "name": "Senior Modeler",
+      "badgeColor": "emerald",
+      "level": 2,
+      "description": "Access to approved production modeling and documentation scripts."
+    },
+    {
+      "id": "JuniorModeler",
+      "name": "Junior Modeler / Intern",
+      "badgeColor": "amber",
+      "level": 1,
+      "description": "Restricted to vetted, safe scripts explicitly enabled for junior staff."
+    }
+  ],
+  "disciplines": [
+    {
+      "id": "All",
+      "name": "All Disciplines"
+    },
+    {
+      "id": "Architecture",
+      "name": "Architecture"
+    },
+    {
+      "id": "Structure",
+      "name": "Structure"
+    },
+    {
+      "id": "MEP",
+      "name": "MEP & Systems"
+    },
+    {
+      "id": "Computational",
+      "name": "Computational / Rhino"
+    }
+  ],
+  "users": [
+    {
+      "id": "usr-admin-1",
+      "username": "User",
+      "displayName": "User (BIM Lead)",
+      "email": "user@firm.internal",
+      "pin": "1234",
+      "role": "Admin",
+      "discipline": "All",
+      "active": true,
+      "lastSeen": "2026-10-17T19:56:23.153Z"
+    },
+    {
+      "id": "usr-coord-1",
+      "username": "arjun.coord",
+      "displayName": "Arjun Mehta",
+      "email": "arjun.m@firm.internal",
+      "pin": "1111",
+      "role": "Coordinator",
+      "discipline": "Architecture",
+      "active": true,
+      "lastSeen": null
+    },
+    {
+      "id": "usr-sr-1",
+      "username": "priya.struct",
+      "displayName": "Priya Sharma",
+      "email": "priya.s@firm.internal",
+      "pin": "2222",
+      "role": "SeniorModeler",
+      "discipline": "Structure",
+      "active": true,
+      "lastSeen": null
+    },
+    {
+      "id": "usr-jr-1",
+      "username": "rohan.intern",
+      "displayName": "Rohan Verma",
+      "email": "rohan.v@firm.internal",
+      "pin": "0000",
+      "role": "JuniorModeler",
+      "discipline": "Architecture",
+      "active": true,
+      "lastSeen": null
+    }
+  ],
+  "scriptRules": {
+    "bim-health-check": {
+      "toolId": "bim-health-check",
+      "title": "BIM Health Check (Native Ribbon Audit)",
+      "category": "Quality & QA",
+      "description": "Comprehensive health audit of model elements, warnings, purgeable items, views, links, and CAD imports.",
+      "author": "BIM Systems",
+      "version": "v1.0",
+      "safetyLevel": "ReadOnly",
+      "packagesRequired": "None",
+      "published": true,
+      "stage": "Published",
+      "allowedRoles": [
+        "Admin",
+        "Coordinator",
+        "SeniorModeler",
+        "JuniorModeler"
+      ],
+      "allowedDisciplines": [
+        "All"
+      ],
+      "revitVersions": [
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+      ],
+      "updatedAt": "2026-10-17T20:53:21.954Z",
+      "minLevel": 1
+    },
+    "local-bim-health-check": {
+      "toolId": "local-bim-health-check",
+      "title": "BIM Health Check",
+      "category": "Quality & QA",
+      "description": "Performs automated model audit, quality checks, and reporting for BIM Health Check.",
+      "author": "Central BIM Library",
+      "version": "v1.0",
+      "safetyLevel": "ReadOnly",
+      "packagesRequired": "None",
+      "published": true,
+      "stage": "Published",
+      "allowedRoles": [
+        "Admin",
+        "Coordinator",
+        "SeniorModeler",
+        "JuniorModeler"
+      ],
+      "allowedDisciplines": [
+        "All"
+      ],
+      "revitVersions": [
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+      ],
+      "updatedAt": "2026-10-17T20:16:32.826Z",
+      "minLevel": 1
+    },
+    "local-renumber-doors": {
+      "toolId": "local-renumber-doors",
+      "title": "Renumber Doors",
+      "category": "Documentation",
+      "description": "Renumber all doors in the active document matching their ToRoom and FromRoom numbers.",
+      "author": "Central BIM Library",
+      "version": "v1.0",
+      "safetyLevel": "Modifying",
+      "packagesRequired": "Clockwork for Dynamo 2.x",
+      "published": true,
+      "stage": "Published",
+      "allowedRoles": [
+        "Admin",
+        "Coordinator",
+        "SeniorModeler"
+      ],
+      "allowedDisciplines": [
+        "All"
+      ],
+      "revitVersions": [
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+      ],
+      "updatedAt": "2026-10-17T19:56:23.168Z",
+      "minLevel": 2
+    },
+    "local-audit-unplaced-rooms": {
+      "toolId": "local-audit-unplaced-rooms",
+      "title": "Audit Unplaced Rooms",
+      "category": "Documentation",
+      "description": "Audit and report unplaced or unclosed rooms in the active Revit project.",
+      "author": "Central BIM Library",
+      "version": "v1.0",
+      "safetyLevel": "ReadOnly",
+      "packagesRequired": "None",
+      "published": true,
+      "stage": "Published",
+      "allowedRoles": [
+        "Admin",
+        "Coordinator",
+        "SeniorModeler",
+        "JuniorModeler"
+      ],
+      "allowedDisciplines": [
+        "All"
+      ],
+      "revitVersions": [
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+      ],
+      "updatedAt": "2026-10-17T19:56:23.168Z",
+      "minLevel": 1
+    },
+    "local-purge-cad-imports": {
+      "toolId": "local-purge-cad-imports",
+      "title": "Purge CAD Imports",
+      "category": "Documentation",
+      "description": "Audit and report imported DWG / CAD instances in the active Revit project.",
+      "author": "Central BIM Library",
+      "version": "v1.0",
+      "safetyLevel": "Modifying",
+      "packagesRequired": "None",
+      "published": true,
+      "stage": "Published",
+      "allowedRoles": [
+        "Admin",
+        "Coordinator",
+        "SeniorModeler",
+        "JuniorModeler"
+      ],
+      "allowedDisciplines": [
+        "All"
+      ],
+      "revitVersions": [
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+      ],
+      "updatedAt": "2026-10-17T20:15:52.650Z",
+      "minLevel": 1
+    },
+    "local-auto-dim-openings": {
+      "toolId": "local-auto-dim-openings",
+      "title": "Auto DIM Openings",
+      "category": "Documentation",
+      "description": "Enterprise automation for Auto DIM Openings.",
+      "author": "User",
+      "version": "v1.0",
+      "safetyLevel": "Modifying",
+      "packagesRequired": "None",
+      "published": true,
+      "stage": "Published",
+      "allowedRoles": [
+        "Admin",
+        "Coordinator",
+        "SeniorModeler"
+      ],
+      "allowedDisciplines": [
+        "All"
+      ],
+      "revitVersions": [
+        "2023",
+        "2024",
+        "2025",
+        "2026"
+      ],
+      "updatedAt": "2026-10-17T20:33:49.689Z",
+      "minLevel": 2
+    }
+  },
+  "activityLog": [
+    {
+      "id": "evt-1792270401954-lmnj",
+      "timestamp": "2026-10-17T20:53:21.954Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L1+"
+    },
+    {
+      "id": "evt-1792270399172-x2co",
+      "timestamp": "2026-10-17T20:53:19.172Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L4+"
+    },
+    {
+      "id": "evt-1792270392596-jh3u",
+      "timestamp": "2026-10-17T20:53:12.596Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L1+"
+    },
+    {
+      "id": "evt-1792270391498-a4ym",
+      "timestamp": "2026-10-17T20:53:11.498Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L3+"
+    },
+    {
+      "id": "evt-1792270391308-7kci",
+      "timestamp": "2026-10-17T20:53:11.308Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L3+"
+    },
+    {
+      "id": "evt-1792270391074-wht1",
+      "timestamp": "2026-10-17T20:53:11.074Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L3+"
+    },
+    {
+      "id": "evt-1792270390104-wv7v",
+      "timestamp": "2026-10-17T20:53:10.104Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L3+"
+    },
+    {
+      "id": "evt-1792270388811-o0kg",
+      "timestamp": "2026-10-17T20:53:08.811Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L3+"
+    },
+    {
+      "id": "evt-1792270386785-lmpb",
+      "timestamp": "2026-10-17T20:53:06.785Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L4+"
+    },
+    {
+      "id": "evt-1792270384667-k63o",
+      "timestamp": "2026-10-17T20:53:04.667Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L4+"
+    },
+    {
+      "id": "evt-1792270382917-jk6k",
+      "timestamp": "2026-10-17T20:53:02.917Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L1+"
+    },
+    {
+      "id": "evt-1792270381835-slgq",
+      "timestamp": "2026-10-17T20:53:01.835Z",
+      "actor": "L4",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Min Level: L2+"
+    },
+    {
+      "id": "evt-1792269229689-uuhn",
+      "timestamp": "2026-10-17T20:33:49.689Z",
+      "actor": "BIM Lead",
+      "action": "Added script \"Auto DIM Openings\"",
+      "details": "Published immediately to Central Hub"
+    },
+    {
+      "id": "evt-1792269164604-lzml",
+      "timestamp": "2026-10-17T20:32:44.604Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Roles: [Admin, Coordinator, SeniorModeler, JuniorModeler]"
+    },
+    {
+      "id": "evt-1792269162982-niv5",
+      "timestamp": "2026-10-17T20:32:42.982Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Roles: [Admin, Coordinator, SeniorModeler]"
+    },
+    {
+      "id": "evt-1792269162157-q8ur",
+      "timestamp": "2026-10-17T20:32:42.157Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Roles: [Admin, JuniorModeler, Coordinator, SeniorModeler]"
+    },
+    {
+      "id": "evt-1792269161749-xebf",
+      "timestamp": "2026-10-17T20:32:41.749Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Roles: [Admin, JuniorModeler, Coordinator]"
+    },
+    {
+      "id": "evt-1792269160821-yqah",
+      "timestamp": "2026-10-17T20:32:40.821Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Roles: [Admin, JuniorModeler]"
+    },
+    {
+      "id": "evt-1792269160137-w2ri",
+      "timestamp": "2026-10-17T20:32:40.137Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check (Native Ribbon Audit)\"",
+      "details": "Roles: [Admin, SeniorModeler, JuniorModeler]"
+    },
+    {
+      "id": "evt-1792268192827-qu51",
+      "timestamp": "2026-10-17T20:16:32.827Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check\"",
+      "details": "Teams: [All]"
+    },
+    {
+      "id": "evt-1792268191907-d5ez",
+      "timestamp": "2026-10-17T20:16:31.907Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"BIM Health Check\"",
+      "details": "Teams: [Architecture]"
+    },
+    {
+      "id": "evt-1792268152652-0yyf",
+      "timestamp": "2026-10-17T20:15:52.652Z",
+      "actor": "BIM Lead",
+      "action": "Updated script \"Purge CAD Imports\"",
+      "details": "Roles: [Admin, Coordinator, SeniorModeler, JuniorModeler]"
+    },
+    {
+      "id": "evt-init",
+      "timestamp": "2026-10-17T19:56:23.153Z",
+      "actor": "User",
+      "action": "Initialized BIM Control Room Governance Store",
+      "details": "Created default roles, disciplines, and script governance matrix."
+    }
+  ]
+}

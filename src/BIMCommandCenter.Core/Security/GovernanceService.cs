@@ -58,7 +58,7 @@ namespace BIMCommandCenter.Core.Security
 
     public class GovernanceService
     {
-        private const string ControlRoomFallbackPath = @"C:\Users\User\.gemini\antigravity\scratch\bim-control-room\data\governance.json";
+        private static string FallbackCachePath => Path.Combine(AppConfig.LocalDataDir, "governance_cache.json");
 
         private readonly AppConfig _config;
         private GovernanceData _data;
@@ -84,7 +84,7 @@ namespace BIMCommandCenter.Core.Security
                 if (File.Exists(primary)) return primary;
             }
 
-            if (File.Exists(ControlRoomFallbackPath)) return ControlRoomFallbackPath;
+            if (File.Exists(FallbackCachePath)) return FallbackCachePath;
 
             return null;
         }
@@ -107,6 +107,18 @@ namespace BIMCommandCenter.Core.Security
                 }
 
                 string rawJson = File.ReadAllText(path);
+
+                // Whenever governance.json is loaded from ScriptsRoot, cache a copy locally for offline fallback
+                if (!string.Equals(path, FallbackCachePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(FallbackCachePath));
+                        File.WriteAllText(FallbackCachePath, rawJson);
+                    }
+                    catch { }
+                }
+
                 var root = Json.Parse(rawJson) as IDictionary<string, object>;
                 if (root == null) return _data ?? new GovernanceData();
 
