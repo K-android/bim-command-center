@@ -10,6 +10,7 @@ using BIMCommandCenter.Core.Catalog;
 using BIMCommandCenter.Core.Ideas;
 using BIMCommandCenter.Core.Infrastructure;
 using BIMCommandCenter.Core.Revit;
+using BIMCommandCenter.Core.Security;
 using Microsoft.Web.WebView2.Core;
 
 namespace BIMCommandCenter.Core.UI
@@ -68,6 +69,55 @@ namespace BIMCommandCenter.Core.UI
                     ctx["catalogSource"] = _s.Config.CatalogSource;
                     ctx["aiEndpointConfigured"] = !string.IsNullOrWhiteSpace(_s.Config.AiEndpoint);
                     return ctx;
+
+                case "getAuthSession":
+                {
+                    var cur = _s.Governance?.CurrentUser;
+                    bool configured = _s.Governance?.Data?.Users != null && _s.Governance.Data.Users.Count > 0;
+                    return new Dictionary<string, object>
+                    {
+                        ["configured"] = configured,
+                        ["loggedIn"] = cur != null,
+                        ["user"] = cur?.ToDictionary(),
+                        ["suggestedUsername"] = Environment.UserName,
+                        ["governancePath"] = _s.Governance?.LoadedPath
+                    };
+                }
+
+                case "login":
+                {
+                    string username = payload.Str("username");
+                    string pin = payload.Str("pin");
+                    bool rememberMe = payload.Bool("rememberMe");
+
+                    if (_s.Governance == null)
+                        throw new InvalidOperationException("Governance service is not available.");
+
+                    if (!_s.Governance.Login(username, pin, rememberMe, out string err))
+                    {
+                        throw new InvalidOperationException(err ?? "Login failed.");
+                    }
+
+                    // Refresh catalog to apply user role and discipline filters
+                    await _s.Catalog.GetAsync(true);
+
+                    return new Dictionary<string, object>
+                    {
+                        ["loggedIn"] = true,
+                        ["user"] = _s.Governance.CurrentUser.ToDictionary()
+                    };
+                }
+
+                case "logout":
+                {
+                    _s.Governance?.Logout();
+                    await _s.Catalog.GetAsync(true);
+                    return new Dictionary<string, object>
+                    {
+                        ["loggedIn"] = false,
+                        ["suggestedUsername"] = Environment.UserName
+                    };
+                }
 
                 case "getCatalog":
                     CatalogResult catalog = await _s.Catalog.GetAsync(payload.Bool("refresh"));
@@ -144,7 +194,18 @@ namespace BIMCommandCenter.Core.UI
 
                     if (tool == null)
                         throw new InvalidOperationException("Tool \"" + toolId + "\" is not in the catalog.");
-                    Log.Write("Execute " + toolId + " by " + Environment.UserName);
+
+                    // Enforce role and discipline authorization from governance
+                    string targetId = tool.Str("toolId") ?? toolId;
+                    if (_s.Governance != null)
+                    {
+                        if (!_s.Governance.IsAuthorized(_s.Governance.CurrentUser, targetId, out string denyReason))
+                        {
+                            throw new UnauthorizedAccessException(denyReason ?? "You are not authorized to run this tool.");
+                        }
+                    }
+
+                    Log.Write("Execute " + toolId + " by " + (_s.Governance?.CurrentUser?.Username ?? Environment.UserName));
 
                     Dictionary<string, string> inputs = null;
                     if (payload.ContainsKey("inputs") && payload["inputs"] is Dictionary<string, object> rawInputs)
@@ -173,6 +234,17 @@ namespace BIMCommandCenter.Core.UI
                     {
                         targetPath = tool.Str("targetPath");
                     }
+
+                    // Enforce authorization for Dynamo Player launch
+                    string targetId = tool?.Str("toolId") ?? toolId;
+                    if (_s.Governance != null)
+                    {
+                        if (!_s.Governance.IsAuthorized(_s.Governance.CurrentUser, targetId, out string denyReason))
+                        {
+                            throw new UnauthorizedAccessException(denyReason ?? "You are not authorized to run this tool.");
+                        }
+                    }
+
                     string resolved = _s.Runner.ResolvePath(targetPath);
                     RunResult result = await _s.Dispatcher.InvokeAsync(app => _s.Runner.LaunchDynamoPlayer(app, resolved, tool));
                     return result.ToDictionary();
@@ -485,7 +557,7 @@ namespace BIMCommandCenter.Core.UI
                     }
 
                     // Re-instantiate catalog
-                    _s.Catalog = new CatalogService(_s.Config, _s.RevitYear ?? "2026");
+                    _s.Catalog = new CatalogService(_s.Config, _s.RevitYear ?? "2026", _s.Governance);
 
                     return new Dictionary<string, object>
                     {
@@ -508,6 +580,12 @@ namespace BIMCommandCenter.Core.UI
         {
             try
             {
+                var curUser = _s.Governance?.CurrentUser;
+                string username = !string.IsNullOrWhiteSpace(curUser?.Username) ? curUser.Username : Environment.UserName;
+                string displayName = !string.IsNullOrWhiteSpace(curUser?.DisplayName) ? curUser.DisplayName : username;
+                string role = !string.IsNullOrWhiteSpace(curUser?.Role) ? curUser.Role : "Unassigned";
+                string discipline = !string.IsNullOrWhiteSpace(curUser?.Discipline) ? curUser.Discipline : "All";
+
                 var entry = new Dictionary<string, object>
                 {
                     ["id"] = result.ExecutionId,
@@ -522,7 +600,10 @@ namespace BIMCommandCenter.Core.UI
                     ["outputs"] = result.Outputs,
                     ["warnings"] = result.Warnings,
                     ["errors"] = result.Errors,
-                    ["user"] = Environment.UserName,
+                    ["user"] = username,
+                    ["userDisplayName"] = displayName,
+                    ["role"] = role,
+                    ["discipline"] = discipline,
                     ["durationSeconds"] = result.DurationSeconds,
                     ["timestamp"] = result.ExecutedAt.ToString("o")
                 };
@@ -541,7 +622,7 @@ namespace BIMCommandCenter.Core.UI
                 if (history.Count > 250) history = history.Take(250).ToList();
                 System.IO.File.WriteAllText(path, Json.Stringify(history));
 
-                // 2. Central Shared Enterprise Telemetry (if configured via settings or scripts folder default)
+                // 2. Central Shared Enterprise Telemetry (per-user file to prevent multi-user network locks)
                 string centralFolder = !string.IsNullOrWhiteSpace(_s.Config.TelemetryFolder)
                     ? _s.Config.TelemetryFolder
                     : (!string.IsNullOrWhiteSpace(_s.Config.ScriptsRoot) ? System.IO.Path.Combine(_s.Config.ScriptsRoot, "telemetry") : null);
@@ -551,9 +632,18 @@ namespace BIMCommandCenter.Core.UI
                     try
                     {
                         System.IO.Directory.CreateDirectory(centralFolder);
-                        string centralFile = System.IO.Path.Combine(centralFolder, "firm_runs.jsonl");
+                        string safeUser = System.Text.RegularExpressions.Regex.Replace(username, @"[^a-zA-Z0-9_\-\.]", "_");
+                        string perUserFile = System.IO.Path.Combine(centralFolder, $"runs_{safeUser}.jsonl");
                         string jsonLine = Json.Stringify(entry).Replace("\r", "").Replace("\n", "") + Environment.NewLine;
-                        System.IO.File.AppendAllText(centralFile, jsonLine);
+                        System.IO.File.AppendAllText(perUserFile, jsonLine);
+
+                        // Also attempt appending to unified firm_runs.jsonl
+                        try
+                        {
+                            string firmFile = System.IO.Path.Combine(centralFolder, "firm_runs.jsonl");
+                            System.IO.File.AppendAllText(firmFile, jsonLine);
+                        }
+                        catch { }
                     }
                     catch { }
                 }
@@ -574,23 +664,39 @@ namespace BIMCommandCenter.Core.UI
 
                 var runList = new List<Dictionary<string, object>>();
 
-                // Try reading central corporate runs
-                if (!string.IsNullOrWhiteSpace(centralFolder))
+                // Try reading central corporate runs (aggregating all runs_*.jsonl and firm_runs.jsonl)
+                if (!string.IsNullOrWhiteSpace(centralFolder) && System.IO.Directory.Exists(centralFolder))
                 {
-                    string centralFile = System.IO.Path.Combine(centralFolder, "firm_runs.jsonl");
-                    if (System.IO.File.Exists(centralFile))
+                    var files = System.IO.Directory.GetFiles(centralFolder, "runs_*.jsonl")
+                        .Concat(System.IO.Directory.GetFiles(centralFolder, "firm_runs.jsonl"))
+                        .Distinct(StringComparer.OrdinalIgnoreCase);
+
+                    var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var file in files)
                     {
-                        var lines = System.IO.File.ReadAllLines(centralFile);
-                        foreach (var line in lines)
+                        try
                         {
-                            if (string.IsNullOrWhiteSpace(line)) continue;
-                            try
+                            var lines = System.IO.File.ReadAllLines(file);
+                            foreach (var line in lines)
                             {
-                                var parsed = Json.AsObject(Json.Parse(line));
-                                if (parsed != null) runList.Add(parsed);
+                                if (string.IsNullOrWhiteSpace(line)) continue;
+                                try
+                                {
+                                    var parsed = Json.AsObject(Json.Parse(line));
+                                    if (parsed != null)
+                                    {
+                                        string execId = parsed.Str("id");
+                                        if (string.IsNullOrEmpty(execId) || seenIds.Add(execId))
+                                        {
+                                            runList.Add(parsed);
+                                        }
+                                    }
+                                }
+                                catch { }
                             }
-                            catch { }
                         }
+                        catch { }
                     }
                 }
 
@@ -794,6 +900,7 @@ namespace BIMCommandCenter.Core.UI
     {
         public AppConfig Config { get; set; }
         public RevitDispatcher Dispatcher { get; set; }
+        public GovernanceService Governance { get; set; }
         public CatalogService Catalog { get; set; }
         public ToolRunner Runner { get; set; }
         public IdeaService Ideas { get; set; }

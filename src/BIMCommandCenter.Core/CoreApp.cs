@@ -11,6 +11,7 @@ using BIMCommandCenter.Core.Catalog;
 using BIMCommandCenter.Core.Ideas;
 using BIMCommandCenter.Core.Infrastructure;
 using BIMCommandCenter.Core.Revit;
+using BIMCommandCenter.Core.Security;
 using BIMCommandCenter.Core.UI;
 
 namespace BIMCommandCenter.Core
@@ -31,11 +32,15 @@ namespace BIMCommandCenter.Core
             var dispatcher = new RevitDispatcher();
             dispatcher.Initialize();
 
+            var governance = new GovernanceService(config);
+            governance.InitializeSession();
+
             Services = new Services
             {
                 Config = config,
                 Dispatcher = dispatcher,
-                Catalog = new CatalogService(config, year),
+                Governance = governance,
+                Catalog = new CatalogService(config, year, governance),
                 Runner = new ToolRunner(config),
                 Ideas = new IdeaService(config),
                 RevitYear = year
@@ -43,7 +48,7 @@ namespace BIMCommandCenter.Core
 
             application.RegisterDockablePane(PaneId, "BIM Command Center", new CommandCenterPane(Services));
             CreateRibbon(application);
-            Log.Write($"Core started in Revit {year}. Config: {config.LoadedFrom}. Catalog: {config.CatalogSource}");
+            Log.Write($"Core started in Revit {year}. Config: {config.LoadedFrom}. Catalog: {config.CatalogSource}. Governance: {governance.LoadedPath ?? "none"}");
             return Result.Succeeded;
         }
 

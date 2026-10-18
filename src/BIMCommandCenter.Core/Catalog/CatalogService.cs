@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BIMCommandCenter.Core.Infrastructure;
+using BIMCommandCenter.Core.Security;
 
 namespace BIMCommandCenter.Core.Catalog
 {
@@ -41,12 +42,15 @@ namespace BIMCommandCenter.Core.Catalog
 
         private readonly AppConfig _config;
         private readonly string _revitYear;
+        private readonly GovernanceService _governance;
+        private List<Dictionary<string, object>> _allTools = new List<Dictionary<string, object>>();
         private CatalogResult _last;
 
-        public CatalogService(AppConfig config, string revitYear)
+        public CatalogService(AppConfig config, string revitYear, GovernanceService governance = null)
         {
             _config = config;
             _revitYear = revitYear;
+            _governance = governance;
         }
 
         private string CachePath => Path.Combine(AppConfig.LocalDataDir, "catalog_cache.json");
@@ -87,16 +91,25 @@ namespace BIMCommandCenter.Core.Catalog
         {
             if (string.Equals(toolId, "bim-health-check", StringComparison.OrdinalIgnoreCase))
             {
-                var foundHealth = _last?.Tools?.FirstOrDefault(t => string.Equals(t.Str("toolId"), "bim-health-check", StringComparison.OrdinalIgnoreCase));
+                var foundHealth = _last?.Tools?.FirstOrDefault(t => string.Equals(t.Str("toolId"), "bim-health-check", StringComparison.OrdinalIgnoreCase))
+                    ?? _allTools?.FirstOrDefault(t => string.Equals(t.Str("toolId"), "bim-health-check", StringComparison.OrdinalIgnoreCase));
                 if (foundHealth != null) return foundHealth;
                 return IntrinsicBimHealthCheck;
             }
 
-            if (_last?.Tools == null) return null;
-            var found = _last.Tools.FirstOrDefault(t => string.Equals(t.Str("toolId"), toolId, StringComparison.OrdinalIgnoreCase));
+            var pool = (_last?.Tools != null && _last.Tools.Count > 0) ? _last.Tools : _allTools;
+            if (pool == null) return null;
+            var found = pool.FirstOrDefault(t => string.Equals(t.Str("toolId"), toolId, StringComparison.OrdinalIgnoreCase));
             if (found != null) return found;
 
-            return _last.Tools.FirstOrDefault(t =>
+            // Also check _allTools in case it was filtered out by governance but still needs authorization checking
+            if (_allTools != null && _allTools != pool)
+            {
+                var fullFound = _allTools.FirstOrDefault(t => string.Equals(t.Str("toolId"), toolId, StringComparison.OrdinalIgnoreCase));
+                if (fullFound != null) return fullFound;
+            }
+
+            return pool.FirstOrDefault(t =>
                 string.Equals(t.Str("title"), toolId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(t.Str("name"), toolId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(Path.GetFileNameWithoutExtension(t.Str("targetPath")), toolId, StringComparison.OrdinalIgnoreCase) ||
@@ -107,7 +120,16 @@ namespace BIMCommandCenter.Core.Catalog
         {
             if (!forceRefresh && _last != null && !_last.FromCache &&
                 DateTime.Now - _last.LoadedAt < TimeSpan.FromMinutes(Math.Max(1, _config.CacheMinutes)))
-                return _last;
+            {
+                return new CatalogResult
+                {
+                    Tools = Filter(_allTools),
+                    Source = _last.Source,
+                    FromCache = _last.FromCache,
+                    Warning = _last.Warning,
+                    LoadedAt = _last.LoadedAt
+                };
+            }
 
             try
             {
@@ -130,6 +152,17 @@ namespace BIMCommandCenter.Core.Catalog
                 List<Dictionary<string, object>> tools = raw.Select(Normalize).Where(IsUsable).ToList();
                 ScanScriptsRoot(tools);
                 EnsureIntrinsicTools(tools);
+
+                if (_governance != null)
+                {
+                    _governance.LoadGovernance(forceRefresh);
+                    foreach (var tool in tools)
+                    {
+                        _governance.ApplyGovernanceRule(tool);
+                    }
+                }
+
+                _allTools = tools;
 
                 try { File.WriteAllText(CachePath, Json.Stringify(tools)); } catch { }
 
@@ -162,6 +195,14 @@ namespace BIMCommandCenter.Core.Catalog
 
                 foreach (string file in dynFiles.Concat(pyFiles).Concat(lnkFiles).Concat(dllFiles).Concat(ghFiles).Concat(ghxFiles))
                 {
+                    // Ignore any disabled files or flag sidecars
+                    if (file.IndexOf(".disabled", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        File.Exists(file + ".disabled") ||
+                        File.Exists(Path.Combine(Path.GetDirectoryName(file), Path.GetFileNameWithoutExtension(file) + ".disabled")))
+                    {
+                        continue;
+                    }
+
                     string fileName = Path.GetFileName(file);
                     string baseName = Path.GetFileNameWithoutExtension(file);
                     string ext = Path.GetExtension(file).ToLowerInvariant();
@@ -654,13 +695,20 @@ namespace BIMCommandCenter.Core.Catalog
         private static bool IsUsable(Dictionary<string, object> t) =>
             !string.IsNullOrWhiteSpace(t.Str("title")) && !string.IsNullOrWhiteSpace(t.Str("targetPath"));
 
-        /// <summary>Hide deprecated tools and tools not built for this Revit version.</summary>
+        /// <summary>Hide deprecated tools and tools not built for this Revit version, and apply governance filtering.</summary>
         private List<Dictionary<string, object>> Filter(List<Dictionary<string, object>> tools) =>
             tools.Where(t =>
             {
                 if (string.Equals(t.Str("status"), "Deprecated", StringComparison.OrdinalIgnoreCase)) return false;
                 List<string> versions = t.StrList("revitVersions");
-                return versions.Count == 0 || versions.Any(v => v.Contains(_revitYear));
+                if (versions.Count > 0 && !versions.Any(v => v.Contains(_revitYear))) return false;
+
+                if (_governance != null)
+                {
+                    if (!_governance.IsToolVisible(_governance.CurrentUser, t)) return false;
+                }
+
+                return true;
             }).ToList();
         /// <summary>
         /// Intelligently categorizes a script based on filename / title keywords when not explicitly specified by a folder.

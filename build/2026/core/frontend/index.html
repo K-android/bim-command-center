@@ -42,6 +42,13 @@
       </div>
     </div>
     <div class="flex items-center gap-1 shrink-0">
+      <!-- User Role & Discipline Badge Pill -->
+      <div id="user-badge" onclick="confirmLogout()" title="Click to switch user or sign out" class="hidden cursor-pointer bg-slate-800 hover:bg-slate-700/90 border border-slate-700/80 px-2 py-1 rounded-md text-[11px] font-medium text-slate-200 flex items-center gap-1.5 transition">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+        <span id="user-badge-text" class="font-semibold text-slate-100 max-w-[150px] truncate">User</span>
+        <i data-lucide="log-out" class="w-3 h-3 text-slate-400 hover:text-rose-400 shrink-0 ml-0.5"></i>
+      </div>
+
       <!-- Mini Medical '+' Icon Button for BIM Health Check -->
       <button onclick="runBimHealthCheck()" id="btn-header-health" title="BIM Health Check: Audit model integrity, warnings, CAD imports &amp; health score"
               class="w-6 h-6 rounded-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-400 border border-rose-500/40 flex items-center justify-center transition shrink-0 group" aria-label="BIM Health Check">
@@ -746,6 +753,65 @@ Central Scripts Folder/<br>
   <!-- TOAST NOTIFICATION -->
   <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-3.5 py-2 rounded-lg shadow-xl text-xs opacity-0 pointer-events-none transition-opacity duration-200 flex items-center gap-1.5"></div>
 
+  <!-- ====================================================================== -->
+  <!-- MODAL: LOGIN GATE OVERLAY (BIM CONTROL ROOM GOVERNANCE)                  -->
+  <!-- ====================================================================== -->
+  <div id="login-overlay" class="hidden fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-6 text-white shadow-2xl space-y-4 fade-in">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+          <i data-lucide="shield-check" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <h2 class="font-bold text-sm tracking-tight text-slate-100">BIM Command Center</h2>
+          <p class="text-[11px] text-slate-400">Control Room Governance Gate</p>
+        </div>
+      </div>
+
+      <div class="p-3 bg-slate-800/70 rounded-xl border border-slate-700/60 text-[11px] text-slate-300 space-y-1">
+        <p class="font-semibold text-slate-200">Sign in to your corporate BIM account.</p>
+        <p class="text-slate-400">Tools, scripts, and model automation privileges are assigned according to your role &amp; discipline.</p>
+      </div>
+
+      <form id="login-form" onsubmit="event.preventDefault(); submitLogin();" class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Username or Email</label>
+          <div class="relative">
+            <i data-lucide="user" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+            <input id="login-username" type="text" required placeholder="e.g. rohan.intern or User"
+                   class="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Security PIN</label>
+          <div class="relative">
+            <i data-lucide="key-round" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+            <input id="login-pin" type="password" required placeholder="Enter 4-digit PIN" maxlength="12"
+                   class="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
+            <input id="login-remember" type="checkbox" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
+            <span>Remember me on this workstation</span>
+          </label>
+        </div>
+
+        <div id="login-error" class="hidden p-2.5 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+          <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 text-rose-400"></i>
+          <span id="login-error-msg"></span>
+        </div>
+
+        <button type="submit" id="login-submit-btn" class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-xs transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2">
+          <span>Authenticate &amp; Enter</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
 <script>
 // ======================================================================
 //  Bridge: Talks to Revit (C#) via Edge WebView2
@@ -783,6 +849,39 @@ const Bridge = (() => {
 
 // Browser Fallback mock (runs when developing outside of Revit in normal browser)
 async function fallbackMock(action, payload) {
+  if (action === 'getAuthSession') {
+    const saved = localStorage.getItem('bimcc_mock_session');
+    if (saved) return { configured: true, loggedIn: true, user: JSON.parse(saved) };
+    return {
+      configured: true,
+      loggedIn: true,
+      user: {
+        username: 'User',
+        displayName: 'User (BIM Lead)',
+        role: 'Admin',
+        discipline: 'All',
+        email: 'user@firm.internal'
+      },
+      suggestedUsername: 'User'
+    };
+  }
+  if (action === 'login') {
+    const user = {
+      username: payload.username || 'User',
+      displayName: payload.username === 'rohan.intern' ? 'Rohan Verma' : (payload.username || 'User'),
+      role: payload.username === 'rohan.intern' ? 'JuniorModeler' : 'Admin',
+      discipline: payload.username === 'rohan.intern' ? 'Architecture' : 'All',
+      email: (payload.username || 'user') + '@firm.internal'
+    };
+    if (payload.rememberMe) {
+      localStorage.setItem('bimcc_mock_session', JSON.stringify(user));
+    }
+    return { loggedIn: true, user };
+  }
+  if (action === 'logout') {
+    localStorage.removeItem('bimcc_mock_session');
+    return { loggedIn: false, suggestedUsername: 'User' };
+  }
   if (action === 'getCatalog') {
     const res = await fetch('data/sample_catalog.json').catch(() => null);
     if (res && res.ok) return { tools: await res.json(), source: 'Local Dev JSON', fromCache: true };
@@ -835,6 +934,7 @@ async function fallbackMock(action, payload) {
 // ======================================================================
 //  State & Config
 // ======================================================================
+let currentUserSession = null;
 let tools = [];
 let context = {};
 let activeCategory = 'All';
@@ -889,6 +989,144 @@ function getCatStyle(c) {
 }
 
 // ======================================================================
+//  Authentication & Governance UI (BIM Control Room)
+// ======================================================================
+async function checkAuthSession() {
+  try {
+    const res = await Bridge.call('getAuthSession');
+    if (res && res.loggedIn && res.user) {
+      currentUserSession = res.user;
+      updateUserBadge(res.user);
+      hideLoginOverlay();
+      return true;
+    } else {
+      currentUserSession = null;
+      updateUserBadge(null);
+      showLoginOverlay(res ? res.suggestedUsername : '');
+      return false;
+    }
+  } catch (e) {
+    console.warn('checkAuthSession error:', e);
+    return true; // Don't hard-block in unexpected errors
+  }
+}
+
+function updateUserBadge(user) {
+  const badge = document.getElementById('user-badge');
+  const badgeText = document.getElementById('user-badge-text');
+  if (!badge || !badgeText) return;
+
+  if (!user) {
+    badge.classList.add('hidden');
+    return;
+  }
+
+  const roleName = user.role === 'SeniorModeler' ? 'Sr. Modeler'
+    : (user.role === 'JuniorModeler' ? 'Jr. Modeler' : user.role);
+  const disc = (user.discipline && user.discipline !== 'All') ? ` (${user.discipline})` : '';
+
+  badgeText.textContent = `${user.displayName || user.username} • ${roleName}${disc}`;
+  badge.classList.remove('hidden');
+  icons();
+}
+
+function showLoginOverlay(suggestedUsername = '') {
+  const overlay = document.getElementById('login-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+  const userInp = document.getElementById('login-username');
+  const pinInp = document.getElementById('login-pin');
+  const errBox = document.getElementById('login-error');
+  if (errBox) errBox.classList.add('hidden');
+  if (userInp) {
+    if (suggestedUsername && !userInp.value) userInp.value = suggestedUsername;
+    setTimeout(() => {
+      if (userInp.value) {
+        if (pinInp) pinInp.focus();
+      } else {
+        userInp.focus();
+      }
+    }, 100);
+  }
+  icons();
+}
+
+function hideLoginOverlay() {
+  const overlay = document.getElementById('login-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  const pinInp = document.getElementById('login-pin');
+  if (pinInp) pinInp.value = '';
+  const errBox = document.getElementById('login-error');
+  if (errBox) errBox.classList.add('hidden');
+}
+
+async function submitLogin() {
+  const userInp = document.getElementById('login-username');
+  const pinInp = document.getElementById('login-pin');
+  const remInp = document.getElementById('login-remember');
+  const errBox = document.getElementById('login-error');
+  const errMsg = document.getElementById('login-error-msg');
+  const btn = document.getElementById('login-submit-btn');
+
+  const username = (userInp?.value || '').trim();
+  const pin = (pinInp?.value || '').trim();
+  const rememberMe = !!remInp?.checked;
+
+  if (!username || !pin) {
+    if (errBox && errMsg) {
+      errMsg.textContent = 'Please enter both your username and PIN.';
+      errBox.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>Verifying...</span>';
+  }
+
+  try {
+    const res = await Bridge.call('login', { username, pin, rememberMe });
+    if (res && res.loggedIn && res.user) {
+      currentUserSession = res.user;
+      updateUserBadge(res.user);
+      hideLoginOverlay();
+      toast(`Authenticated as ${res.user.displayName || res.user.username} (${res.user.role})`);
+      await loadCatalog(true);
+    } else {
+      throw new Error(res?.error || 'Invalid credentials');
+    }
+  } catch (err) {
+    if (errBox && errMsg) {
+      errMsg.textContent = err.message || 'Login failed. Please check credentials.';
+      errBox.classList.remove('hidden');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Authenticate &amp; Enter</span><i data-lucide="arrow-right" class="w-4 h-4"></i>';
+      icons();
+    }
+  }
+}
+
+async function confirmLogout() {
+  const name = currentUserSession ? (currentUserSession.displayName || currentUserSession.username) : 'your account';
+  if (!confirm(`Switch user or sign out from ${name}?`)) return;
+
+  try {
+    const res = await Bridge.call('logout');
+    currentUserSession = null;
+    updateUserBadge(null);
+    showLoginOverlay(res?.suggestedUsername || '');
+    toast('Signed out successfully.');
+    await loadCatalog(true);
+  } catch (err) {
+    toast('Logout error: ' + err.message, true);
+  }
+}
+
+// ======================================================================
 //  Lifecycle & Initialization
 // ======================================================================
 window.addEventListener('DOMContentLoaded', async () => {
@@ -902,6 +1140,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   } catch (e) {
     document.getElementById('ctx-line').textContent = 'Ready (Standalone Mode)';
   }
+
+  // Check governance authentication session
+  const authed = await checkAuthSession();
 
   try {
     const cfg = await Bridge.call('getConfig');
@@ -921,7 +1162,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   } catch (e) {}
   updateRibbonBadgeText();
 
-  await loadCatalog(false);
+  if (authed) {
+    await loadCatalog(false);
+  }
   updateAiBadge();
   updateGhToggleUI();
   initChips();
