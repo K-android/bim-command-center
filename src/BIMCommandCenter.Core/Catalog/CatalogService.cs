@@ -207,15 +207,65 @@ namespace BIMCommandCenter.Core.Catalog
                     string baseName = Path.GetFileNameWithoutExtension(file);
                     string ext = Path.GetExtension(file).ToLowerInvariant();
 
-                    if (ext == ".dll" && (fileName.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase) || 
-                                          fileName.StartsWith("System", StringComparison.OrdinalIgnoreCase) || 
-                                          fileName.StartsWith("Revit", StringComparison.OrdinalIgnoreCase) || 
-                                          fileName.StartsWith("BIMCommandCenter", StringComparison.OrdinalIgnoreCase)))
-                        continue;
-
                     string dir = Path.GetDirectoryName(file);
                     string relDir = dir.Length > root.Length ? dir.Substring(root.Length).TrimStart('\\', '/') : "";
                     string[] parts = relDir.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (ext == ".dll")
+                    {
+                        // 1. Skip DLLs in dependency subfolders
+                        if (parts.Any(p => p.Equals("lib", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("libs", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("packages", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("deps", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("dependencies", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("runtimes", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("x64", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("x86", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
+
+                        // 2. Skip common library / framework dependencies
+                        if (fileName.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("System", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("Revit", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("Autodesk", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("Newtonsoft", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("RestSharp", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("MaterialDesign", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("MahApps", StringComparison.OrdinalIgnoreCase) || 
+                            fileName.StartsWith("BIMCommandCenter", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        // 3. If a companion .addin manifest exists in the same folder, only include the entry assembly
+                        string[] addinManifests = Directory.GetFiles(dir, "*.addin");
+                        if (addinManifests.Length > 0)
+                        {
+                            bool isManifestEntry = false;
+                            foreach (var mf in addinManifests)
+                            {
+                                try
+                                {
+                                    string content = File.ReadAllText(mf);
+                                    if (content.IndexOf(fileName, StringComparison.OrdinalIgnoreCase) >= 0)
+                                    {
+                                        isManifestEntry = true;
+                                        break;
+                                    }
+                                }
+                                catch { }
+                            }
+
+                            if (!isManifestEntry)
+                            {
+                                // Sibling dependency DLL in a manifest-driven addin package
+                                continue;
+                            }
+                        }
+                    }
 
                     string category = "Central Library";
                     var engineFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
