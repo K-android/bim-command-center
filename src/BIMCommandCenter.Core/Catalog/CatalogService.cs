@@ -186,6 +186,96 @@ namespace BIMCommandCenter.Core.Catalog
             {
                 var existing = new HashSet<string>(tools.Select(t => t.Str("targetPath")).Where(p => !string.IsNullOrEmpty(p)), StringComparer.OrdinalIgnoreCase);
 
+                // 1. Scan and register .addin manifest packages (multi-command / multi-DLL add-ins)
+                string[] addinFiles = Directory.GetFiles(root, "*.addin", SearchOption.AllDirectories);
+                foreach (string addinFile in addinFiles)
+                {
+                    if (addinFile.IndexOf(".disabled", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        File.Exists(addinFile + ".disabled") ||
+                        File.Exists(Path.Combine(Path.GetDirectoryName(addinFile), Path.GetFileNameWithoutExtension(addinFile) + ".disabled")))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        string content = File.ReadAllText(addinFile);
+                        string addinDir = Path.GetDirectoryName(addinFile);
+                        string relDir = addinDir.Length > root.Length ? addinDir.Substring(root.Length).TrimStart('\\', '/') : "";
+                        string[] parts = relDir.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+                        string category = DetermineCategory(parts, Path.GetFileNameWithoutExtension(addinFile));
+
+                        var cmdMatches = Regex.Matches(content, @"<AddIn\s+Type=""Command""[^>]*>([\s\S]*?)</AddIn>", RegexOptions.IgnoreCase);
+                        foreach (Match m in cmdMatches)
+                        {
+                            string block = m.Groups[1].Value;
+                            string assemblyRel = Regex.Match(block, @"<Assembly>([\s\S]*?)</Assembly>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                            string fullClass = Regex.Match(block, @"<FullClassName>([\s\S]*?)</FullClassName>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                            string cmdName = Regex.Match(block, @"<Name>([\s\S]*?)</Name>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                            if (string.IsNullOrEmpty(cmdName))
+                                cmdName = Regex.Match(block, @"<Text>([\s\S]*?)</Text>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                            string desc = Regex.Match(block, @"<Description>([\s\S]*?)</Description>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+                            string vendor = Regex.Match(block, @"<VendorDescription>([\s\S]*?)</VendorDescription>", RegexOptions.IgnoreCase).Groups[1].Value.Trim();
+
+                            if (string.IsNullOrEmpty(assemblyRel)) continue;
+
+                            string targetDll = Path.IsPathRooted(assemblyRel) ? assemblyRel : Path.GetFullPath(Path.Combine(addinDir, assemblyRel));
+                            if (!File.Exists(targetDll))
+                            {
+                                string siblingDll = Path.Combine(addinDir, Path.GetFileName(assemblyRel));
+                                if (File.Exists(siblingDll)) targetDll = siblingDll;
+                            }
+
+                            if (!File.Exists(targetDll)) continue;
+
+                            string toolTitle = !string.IsNullOrWhiteSpace(cmdName) ? cmdName : Regex.Replace(Path.GetFileNameWithoutExtension(targetDll), "[_-]+", " ");
+                            try { toolTitle = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(toolTitle); } catch {}
+
+                            string idKey = Path.GetFileNameWithoutExtension(addinFile) + "-" + (!string.IsNullOrEmpty(cmdName) ? cmdName : fullClass);
+                            string toolId = "local-addin-" + Regex.Replace(idKey.ToLowerInvariant(), "[^a-z0-9]+", "-");
+
+                            var addinTool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["toolId"] = toolId,
+                                ["title"] = toolTitle,
+                                ["name"] = toolTitle,
+                                ["category"] = category,
+                                ["description"] = !string.IsNullOrWhiteSpace(desc) ? desc : $"Revit C# add-in command from {Path.GetFileName(addinFile)}",
+                                ["intendedOutcome"] = !string.IsNullOrWhiteSpace(desc) ? desc : $"Revit C# add-in command from {Path.GetFileName(addinFile)}",
+                                ["keywords"] = new List<string> { Path.GetFileNameWithoutExtension(targetDll).ToLowerInvariant(), toolTitle.ToLowerInvariant(), category.ToLowerInvariant() },
+                                ["tags"] = new List<string> { category.ToLowerInvariant(), "addin", "nativeaddin" },
+                                ["actionType"] = "NativeAddin",
+                                ["targetPath"] = targetDll,
+                                ["commandClass"] = fullClass,
+                                ["executionMode"] = "Player",
+                                ["status"] = "Approved",
+                                ["riskLevel"] = "Medium",
+                                ["owningTeam"] = !string.IsNullOrWhiteSpace(vendor) ? vendor : "Central BIM Library",
+                                ["author"] = !string.IsNullOrWhiteSpace(vendor) ? vendor : "Central BIM Library",
+                                ["safetyLevel"] = "ReadWrite",
+                                ["affectedData"] = "Modifies active Revit model elements.",
+                                ["canAITrigger"] = true,
+                                ["version"] = "v1.0 (Central)",
+                                ["iconName"] = "Activity",
+                                ["revitVersions"] = new List<string> { "2023", "2024", "2025", "2026" },
+                                ["packagesRequired"] = "",
+                                ["lastTestedDate"] = "Central Shared Asset",
+                                ["parameters"] = new List<Dictionary<string, object>>()
+                            };
+
+                            tools.Insert(0, addinTool);
+                            existing.Add(targetDll);
+                            existing.Add(Path.GetFileName(targetDll));
+                        }
+
+                        existing.Add(addinFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Write($"Failed parsing addin manifest {addinFile}: {ex.Message}");
+                    }
+                }
+
                 string[] dynFiles = Directory.GetFiles(root, "*.dyn", SearchOption.AllDirectories);
                 string[] pyFiles = Directory.GetFiles(root, "*.py", SearchOption.AllDirectories);
                 string[] lnkFiles = Directory.GetFiles(root, "*.lnk", SearchOption.AllDirectories);
@@ -204,6 +294,8 @@ namespace BIMCommandCenter.Core.Catalog
                     }
 
                     string fileName = Path.GetFileName(file);
+                    if (existing.Contains(file) || existing.Contains(fileName)) continue;
+
                     string baseName = Path.GetFileNameWithoutExtension(file);
                     string ext = Path.GetExtension(file).ToLowerInvariant();
 
@@ -249,8 +341,8 @@ namespace BIMCommandCenter.Core.Catalog
                             {
                                 try
                                 {
-                                    string content = File.ReadAllText(mf);
-                                    if (content.IndexOf(fileName, StringComparison.OrdinalIgnoreCase) >= 0)
+                                    string mfContent = File.ReadAllText(mf);
+                                    if (mfContent.IndexOf(fileName, StringComparison.OrdinalIgnoreCase) >= 0)
                                     {
                                         isManifestEntry = true;
                                         break;
@@ -267,47 +359,7 @@ namespace BIMCommandCenter.Core.Catalog
                         }
                     }
 
-                    string category = "Central Library";
-                    var engineFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                    {
-                        "Dynamo", "PyRevit", "Python", "Custom Addins", "CustomAddins", "Addins", "Add-ins", "Grasshopper", "Rhino", "Scripts"
-                    };
-
-                    if (parts.Length == 0)
-                    {
-                        category = "Central Library";
-                    }
-                    else if (parts.Length == 1)
-                    {
-                        // e.g. <root>/Documentation OR <root>/Dynamo
-                        category = engineFolderNames.Contains(parts[0]) ? "Central Library" : parts[0];
-                    }
-                    else
-                    {
-                        // e.g. <root>/Documentation/Dynamo OR <root>/Structures/Analysis/PyRevit
-                        // If deepest folder is an engine folder, strip it from category name
-                        if (engineFolderNames.Contains(parts[parts.Length - 1]))
-                        {
-                            category = string.Join(" / ", parts.Take(parts.Length - 1));
-                        }
-                        else if (engineFolderNames.Contains(parts[0]))
-                        {
-                            category = string.Join(" / ", parts.Skip(1));
-                        }
-                        else
-                        {
-                            category = string.Join(" / ", parts);
-                        }
-                    }
-
-                    // If folder structure did not specify a domain category (e.g. script is in root or in Dynamo/ directly),
-                    // intelligently auto-classify based on the script name keywords (e.g. Auto DIM -> Documentation)
-                    if (string.Equals(category, "Central Library", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(category))
-                    {
-                        category = InferCategoryFromName(baseName);
-                    }
-
-                    if (existing.Contains(file) || existing.Contains(fileName)) continue;
+                    string category = DetermineCategory(parts, baseName);
 
                     string targetPath = file;
                     string actionType = (ext == ".gh" || ext == ".ghx") ? "Grasshopper" : (ext == ".dyn" ? "Dynamo" : (ext == ".py" ? "PyRevit" : "NativeAddin"));
@@ -760,6 +812,46 @@ namespace BIMCommandCenter.Core.Catalog
 
                 return true;
             }).ToList();
+        private static string DetermineCategory(string[] parts, string baseName)
+        {
+            string category = "Central Library";
+            var engineFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Dynamo", "PyRevit", "Python", "Custom Addins", "CustomAddins", "Addins", "Add-ins", "Grasshopper", "Rhino", "Scripts"
+            };
+
+            if (parts.Length == 0)
+            {
+                category = "Central Library";
+            }
+            else if (parts.Length == 1)
+            {
+                category = engineFolderNames.Contains(parts[0]) ? "Central Library" : parts[0];
+            }
+            else
+            {
+                if (engineFolderNames.Contains(parts[parts.Length - 1]))
+                {
+                    category = string.Join(" / ", parts.Take(parts.Length - 1));
+                }
+                else if (engineFolderNames.Contains(parts[0]))
+                {
+                    category = string.Join(" / ", parts.Skip(1));
+                }
+                else
+                {
+                    category = string.Join(" / ", parts);
+                }
+            }
+
+            if (string.Equals(category, "Central Library", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(category))
+            {
+                category = InferCategoryFromName(baseName);
+            }
+
+            return category;
+        }
+
         /// <summary>
         /// Intelligently categorizes a script based on filename / title keywords when not explicitly specified by a folder.
         /// </summary>

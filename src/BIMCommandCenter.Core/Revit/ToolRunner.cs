@@ -323,7 +323,8 @@ namespace BIMCommandCenter.Core.Revit
             // 1. If target is or points to a .dll file:
             if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved))
             {
-                return RunAssemblyCommand(app, resolved, title);
+                string cmdClass = tool != null ? tool.Str("commandClass") : null;
+                return RunAssemblyCommand(app, resolved, title, cmdClass);
             }
 
             // 2. Try looking up Ribbon Command directly
@@ -370,21 +371,151 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            return RunResult.Fail("Command or add-in not found: " + target + "\nMake sure the add-in is installed or located in your tools folder.");
+            return RunResult.Fail("Command or add-in not found: " + target + "\nMake sure the add-in is located in your central folder.");
         }
 
-        private static RunResult RunAssemblyCommand(UIApplication app, string dllPath, string title)
+        private static readonly HashSet<string> RegisteredProbeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static bool _resolverInitialized = false;
+
+        private static void EnsureAssemblyResolver(string directory)
+        {
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return;
+
+            lock (RegisteredProbeDirectories)
+            {
+                RegisteredProbeDirectories.Add(directory);
+
+                foreach (string sub in new[] { "lib", "libs", "bin", "packages", "deps", "dependencies", "runtimes" })
+                {
+                    string subDir = Path.Combine(directory, sub);
+                    if (Directory.Exists(subDir)) RegisteredProbeDirectories.Add(subDir);
+                }
+
+                if (!_resolverInitialized)
+                {
+                    _resolverInitialized = true;
+                    AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+                    {
+                        try
+                        {
+                            string asmName = new AssemblyName(args.Name).Name;
+                            if (string.IsNullOrEmpty(asmName)) return null;
+
+                            lock (RegisteredProbeDirectories)
+                            {
+                                foreach (var probeDir in RegisteredProbeDirectories)
+                                {
+                                    string candidate = Path.Combine(probeDir, asmName + ".dll");
+                                    if (File.Exists(candidate))
+                                    {
+                                        return Assembly.LoadFrom(candidate);
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                        return null;
+                    };
+                }
+            }
+        }
+
+        private static ExternalCommandData CreateExternalCommandData(UIApplication app)
+        {
+            ExternalCommandData data = null;
+
+            // 1. Try non-public constructors
+            try
+            {
+                var ctors = typeof(ExternalCommandData).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                foreach (var ctor in ctors)
+                {
+                    var parameters = ctor.GetParameters();
+                    if (parameters.Length == 0)
+                    {
+                        data = (ExternalCommandData)ctor.Invoke(null);
+                        break;
+                    }
+                    if (parameters.Length == 1 && parameters[0].ParameterType.IsAssignableFrom(typeof(UIApplication)))
+                    {
+                        data = (ExternalCommandData)ctor.Invoke(new object[] { app });
+                        break;
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Fallback to uninitialized object
+            if (data == null)
+            {
+                try
+                {
+#if NET8_0_OR_GREATER
+                    data = (ExternalCommandData)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(ExternalCommandData));
+#else
+                    data = (ExternalCommandData)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(ExternalCommandData));
+#endif
+                }
+                catch { }
+            }
+
+            if (data != null)
+            {
+                // Populate internal fields
+                foreach (var field in typeof(ExternalCommandData).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                {
+                    try
+                    {
+                        if (field.FieldType.IsAssignableFrom(typeof(UIApplication)))
+                        {
+                            field.SetValue(data, app);
+                        }
+                        else if (field.FieldType.IsAssignableFrom(typeof(Autodesk.Revit.DB.View)) && app.ActiveUIDocument != null)
+                        {
+                            field.SetValue(data, app.ActiveUIDocument.ActiveView);
+                        }
+                        else if (field.FieldType.IsAssignableFrom(typeof(Dictionary<string, string>)) ||
+                                 typeof(IDictionary<string, string>).IsAssignableFrom(field.FieldType))
+                        {
+                            field.SetValue(data, new Dictionary<string, string>());
+                        }
+                    }
+                    catch { }
+                }
+
+                // Populate properties if writable
+                foreach (var prop in typeof(ExternalCommandData).GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                {
+                    try
+                    {
+                        if (prop.CanWrite)
+                        {
+                            if (prop.PropertyType.IsAssignableFrom(typeof(UIApplication))) prop.SetValue(data, app);
+                            else if (prop.PropertyType.IsAssignableFrom(typeof(Autodesk.Revit.DB.View)) && app.ActiveUIDocument != null) prop.SetValue(data, app.ActiveUIDocument.ActiveView);
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            return data;
+        }
+
+        private static RunResult RunAssemblyCommand(UIApplication app, string dllPath, string title, string commandClassName = null)
         {
             try
             {
+                string dir = Path.GetDirectoryName(dllPath);
+                EnsureAssemblyResolver(dir);
+
                 Assembly asm = Assembly.LoadFrom(dllPath);
 
-                // Check if it's BIMHealthCheck engine
-                Type engineType = asm.GetType("BIMHealthCheck.Engine.HealthCheckEngine");
-                if (engineType != null)
+                // 1. Check if it's BIMHealthCheck engine
+                Type healthCheckType = asm.GetType("BIMHealthCheck.Engine.HealthCheckEngine");
+                if (healthCheckType != null)
                 {
-                    object engine = Activator.CreateInstance(engineType);
-                    MethodInfo runMethod = engineType.GetMethod("RunAllChecks");
+                    object engine = Activator.CreateInstance(healthCheckType);
+                    MethodInfo runMethod = healthCheckType.GetMethod("RunAllChecks");
                     object score = runMethod.Invoke(engine, new object[] { app.ActiveUIDocument.Document });
                     Type dialogType = asm.GetType("BIMHealthCheck.UI.HealthCheckDialog");
                     var dialog = (System.Windows.Window)Activator.CreateInstance(dialogType, new object[] { score });
@@ -392,11 +523,112 @@ namespace BIMCommandCenter.Core.Revit
                     return RunResult.Success("Successfully completed " + title);
                 }
 
-                return RunResult.Fail("Could not locate executable entry point in " + Path.GetFileName(dllPath));
+                // 2. Identify candidate IExternalCommand type
+                Type cmdType = null;
+                if (!string.IsNullOrWhiteSpace(commandClassName))
+                {
+                    cmdType = asm.GetType(commandClassName, false, true);
+                }
+
+                if (cmdType == null)
+                {
+                    // Check companion .addin file if not explicitly specified
+                    string[] addinFiles = Directory.GetFiles(dir, "*.addin");
+                    foreach (var af in addinFiles)
+                    {
+                        try
+                        {
+                            string xml = File.ReadAllText(af);
+                            var match = System.Text.RegularExpressions.Regex.Match(xml, @"<FullClassName>\s*([a-zA-Z0-9_\.]+)\s*</FullClassName>");
+                            if (match.Success)
+                            {
+                                string candidateClassName = match.Groups[1].Value.Trim();
+                                cmdType = asm.GetType(candidateClassName, false, true);
+                                if (cmdType != null) break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                if (cmdType == null)
+                {
+                    try
+                    {
+                        var types = asm.GetTypes();
+                        cmdType = types.FirstOrDefault(t => 
+                            typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
+
+                        if (cmdType == null)
+                        {
+                            string baseName = Path.GetFileNameWithoutExtension(dllPath);
+                            cmdType = types.FirstOrDefault(t => 
+                                (t.Name.Equals(baseName, StringComparison.OrdinalIgnoreCase) ||
+                                 t.Name.Equals("Command", StringComparison.OrdinalIgnoreCase) ||
+                                 t.Name.EndsWith("Command", StringComparison.OrdinalIgnoreCase)) &&
+                                !t.IsAbstract && !t.IsInterface);
+                        }
+                    }
+                    catch (ReflectionTypeLoadException rtle)
+                    {
+                        cmdType = rtle.Types.FirstOrDefault(t => 
+                            t != null && typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
+                    }
+                }
+
+                if (cmdType == null)
+                {
+                    return RunResult.Fail("Could not locate IExternalCommand entry point in " + Path.GetFileName(dllPath) +
+                        ".\nEnsure the C# class implements Autodesk.Revit.UI.IExternalCommand.");
+                }
+
+                // 3. Execute IExternalCommand
+                object cmdInstance = Activator.CreateInstance(cmdType);
+                var commandData = CreateExternalCommandData(app);
+                string message = string.Empty;
+                var elements = new Autodesk.Revit.DB.ElementSet();
+
+                MethodInfo executeMethod = cmdType.GetMethod("Execute", new[] { typeof(ExternalCommandData), typeof(string).MakeByRefType(), typeof(Autodesk.Revit.DB.ElementSet) });
+                if (executeMethod != null)
+                {
+                    object[] invokeArgs = new object[] { commandData, message, elements };
+                    object retObj = executeMethod.Invoke(cmdInstance, invokeArgs);
+
+                    if (retObj is Autodesk.Revit.UI.Result result)
+                    {
+                        if (result == Autodesk.Revit.UI.Result.Succeeded)
+                        {
+                            return RunResult.Success($"Successfully executed {title}.");
+                        }
+                        else if (result == Autodesk.Revit.UI.Result.Cancelled)
+                        {
+                            return RunResult.Success($"Cancelled {title}.");
+                        }
+                        else
+                        {
+                            string returnedMsg = invokeArgs[1] as string;
+                            return RunResult.Fail(!string.IsNullOrWhiteSpace(returnedMsg) ? returnedMsg : $"{title} execution returned Failed.");
+                        }
+                    }
+
+                    return RunResult.Success($"Executed {title}.");
+                }
+
+                // Fallback for custom Execute(UIApplication) or Execute(Document) methods
+                MethodInfo appMethod = cmdType.GetMethod("Execute", new[] { typeof(UIApplication) }) ?? cmdType.GetMethod("Run", new[] { typeof(UIApplication) });
+                if (appMethod != null)
+                {
+                    appMethod.Invoke(cmdInstance, new object[] { app });
+                    return RunResult.Success($"Successfully executed {title}.");
+                }
+
+                return RunResult.Fail("No compatible Execute method found on " + cmdType.FullName);
             }
             catch (Exception ex)
             {
-                return RunResult.Fail("Error executing " + title + ": " + (ex.InnerException?.Message ?? ex.Message));
+                Exception inner = ex.InnerException ?? ex;
+                Log.Write("RunAssemblyCommand error: " + inner);
+                return RunResult.Fail("Error executing " + title + ": " + inner.Message);
             }
         }
     }
