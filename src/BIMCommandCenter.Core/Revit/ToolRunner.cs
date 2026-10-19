@@ -81,7 +81,7 @@ namespace BIMCommandCenter.Core.Revit
                 case "Dynamo":
                     return RunDynamo(app, tool, ResolvePath(target), inputs);
                 case "PyRevit":
-                    return RunRibbonCommand(app, target, title);
+                    return RunPyRevit(app, target, title, tool);
                 case "NativeAddin":
                     return RunNativeAddin(app, target, title, tool);
                 case "PostableCommand":
@@ -286,6 +286,94 @@ namespace BIMCommandCenter.Core.Revit
             }
 
             return RunResult.Fail("Dynamo Player command ('ID_PLAYLIST_DYNAMO') is busy or another transaction is active in Revit.");
+        }
+
+        private RunResult RunPyRevit(UIApplication app, string target, string title, Dictionary<string, object> tool)
+        {
+            string resolved = ResolvePath(target);
+
+            // 1. If target is already a registered Ribbon Command ID:
+            RevitCommandId id = RevitCommandId.LookupCommandId(target);
+            if (id != null && app.CanPostCommand(id))
+            {
+                app.PostCommand(id);
+                return RunResult.Success("Started " + title);
+            }
+
+            // 2. Try looking up ribbon command by script name or button variations
+            string baseName = Path.GetFileNameWithoutExtension(resolved ?? target);
+            if (string.Equals(baseName, "script", StringComparison.OrdinalIgnoreCase))
+            {
+                string dir = Path.GetDirectoryName(resolved ?? target);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    string parentFolder = Path.GetFileName(dir);
+                    baseName = Regex.Replace(parentFolder, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown)$", "", RegexOptions.IgnoreCase);
+                }
+            }
+
+            string[] variations = new[]
+            {
+                "CustomCtrl_%CustomCtrl_%" + target.TrimStart('%'),
+                "CustomCtrl_%CustomCtrl_%pyRevit%" + baseName,
+                "CustomCtrl_%CustomCtrl_%pyRevit%Tools%" + baseName,
+                "CustomCtrl_%CustomCtrl_%" + baseName,
+                "CustomCtrl_%CustomCtrl_%" + title.Replace(" ", "")
+            };
+
+            foreach (var v in variations)
+            {
+                id = RevitCommandId.LookupCommandId(v);
+                if (id != null && app.CanPostCommand(id))
+                {
+                    app.PostCommand(id);
+                    return RunResult.Success("Started " + title);
+                }
+            }
+
+            // 3. If target points to a .py script on disk, try dynamic pyRevit executor if pyRevit is loaded in Revit
+            if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved))
+            {
+                var runRes = TryExecutePyRevitScript(app, resolved, title);
+                if (runRes != null) return runRes;
+            }
+
+            return RunResult.Fail(
+                $"Ribbon command or pyRevit button not found: \"{title}\".\n\n" +
+                "Ensure pyRevit is installed on this workstation and the extension/button is loaded in Revit."
+            );
+        }
+
+        private static RunResult TryExecutePyRevitScript(UIApplication app, string scriptPath, string title)
+        {
+            try
+            {
+                var pyAsm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => 
+                    a.GetName().Name.Equals("PyRevitLoader", StringComparison.OrdinalIgnoreCase) ||
+                    a.GetName().Name.StartsWith("pyRevitLabs.PyRevit.Runtime", StringComparison.OrdinalIgnoreCase));
+
+                if (pyAsm != null)
+                {
+                    Type execType = pyAsm.GetType("PyRevitLoader.ScriptExecutor") ??
+                                    pyAsm.GetType("pyRevitLabs.PyRevit.Runtime.ScriptExecutor");
+
+                    if (execType != null)
+                    {
+                        object executor = Activator.CreateInstance(execType);
+                        MethodInfo execMethod = execType.GetMethod("ExecuteScript", new[] { typeof(string) });
+                        if (execMethod != null)
+                        {
+                            execMethod.Invoke(executor, new object[] { scriptPath });
+                            return RunResult.Success("Executed " + title);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("TryExecutePyRevitScript exception: " + ex);
+            }
+            return null;
         }
 
         // ---------------- Ribbon buttons (pyRevit + any add-in) ----------------

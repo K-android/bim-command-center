@@ -359,6 +359,40 @@ namespace BIMCommandCenter.Core.Catalog
                         }
                     }
 
+                    if (ext == ".py")
+                    {
+                        // 1. Skip Python helper modules in dependency / library subfolders (e.g. lib/, packages/)
+                        if (parts.Any(p => p.Equals("lib", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("libs", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("packages", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("deps", StringComparison.OrdinalIgnoreCase) ||
+                                           p.Equals("dependencies", StringComparison.OrdinalIgnoreCase) ||
+                                           p.StartsWith("_", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
+
+                        // 2. Skip __init__.py files
+                        if (fileName.Equals("__init__.py", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        // 3. If standard pyRevit pushbutton (script.py), derive baseName from the folder name
+                        if (fileName.Equals("script.py", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string parentFolder = Path.GetFileName(dir);
+                            if (!string.IsNullOrEmpty(parentFolder))
+                            {
+                                string cleanParent = Regex.Replace(parentFolder, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown)$", "", RegexOptions.IgnoreCase);
+                                if (!string.IsNullOrWhiteSpace(cleanParent))
+                                {
+                                    baseName = cleanParent;
+                                }
+                            }
+                        }
+                    }
+
                     string category = DetermineCategory(parts, baseName);
 
                     string targetPath = file;
@@ -382,6 +416,10 @@ namespace BIMCommandCenter.Core.Catalog
 
                     string finalExt = Path.GetExtension(targetPath).ToLowerInvariant();
                     var meta = ExtractScriptMetadata(targetPath, finalExt, friendlyTitle, category);
+                    if (!string.IsNullOrWhiteSpace(meta.TitleOverride))
+                    {
+                        friendlyTitle = meta.TitleOverride;
+                    }
 
                     var autoTool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
                     {
@@ -448,6 +486,7 @@ namespace BIMCommandCenter.Core.Catalog
 
         private class ScriptMetadata
         {
+            public string TitleOverride { get; set; }
             public string Description { get; set; }
             public string Author { get; set; } = "Central BIM Library";
             public string PackagesRequired { get; set; } = "None";
@@ -463,7 +502,7 @@ namespace BIMCommandCenter.Core.Catalog
         {
             var meta = new ScriptMetadata();
 
-            // 1. Check for companion description file: {script}.desc.txt or {script}.txt
+            // 1. Check for companion description file: {script}.desc.txt or {script}.txt, or pyRevit bundle.yaml
             try
             {
                 string dir = Path.GetDirectoryName(targetPath);
@@ -489,6 +528,28 @@ namespace BIMCommandCenter.Core.Catalog
                             if (parsed.TryGetValue("safetyLevel", out object s) && s != null) meta.SafetyLevel = s.ToString();
                             if (parsed.TryGetValue("packagesRequired", out object p) && p != null) meta.PackagesRequired = p.ToString();
                         }
+                    }
+                }
+
+                // Check for companion pyRevit bundle.yaml metadata
+                string bundleYaml = Path.Combine(dir, "bundle.yaml");
+                if (File.Exists(bundleYaml))
+                {
+                    string yamlContent = File.ReadAllText(bundleYaml);
+                    var titleMatch = Regex.Match(yamlContent, @"^title:\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    if (titleMatch.Success && !string.IsNullOrWhiteSpace(titleMatch.Groups[1].Value))
+                    {
+                        meta.TitleOverride = titleMatch.Groups[1].Value.Trim('\'', '"', ' ');
+                    }
+                    var tooltipMatch = Regex.Match(yamlContent, @"^tooltip:\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    if (tooltipMatch.Success && !string.IsNullOrWhiteSpace(tooltipMatch.Groups[1].Value))
+                    {
+                        meta.Description = tooltipMatch.Groups[1].Value.Trim('\'', '"', ' ');
+                    }
+                    var authorMatch = Regex.Match(yamlContent, @"^author:\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    if (authorMatch.Success && !string.IsNullOrWhiteSpace(authorMatch.Groups[1].Value))
+                    {
+                        meta.Author = authorMatch.Groups[1].Value.Trim('\'', '"', ' ');
                     }
                 }
             }
