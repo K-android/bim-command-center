@@ -188,7 +188,22 @@
           <div class="text-[10px] text-blue-700/80">Interactive BIM automation concierge &amp; script librarian</div>
         </div>
       </div>
-      <button onclick="clearChat()" class="text-blue-600 hover:text-blue-900 text-xs hover:underline">Clear Chat</button>
+      <div class="flex items-center gap-2">
+        <!-- Quick Model Selector in Copilot -->
+        <div class="flex items-center gap-1 bg-white/90 border border-blue-200 rounded-md px-2 py-0.5 shadow-2xs">
+          <i data-lucide="cpu" class="w-3 h-3 text-blue-600"></i>
+          <select id="copilot-model-select" onchange="quickSwitchModel(this.value)" class="text-[10px] bg-transparent text-blue-950 font-mono font-medium focus:outline-none cursor-pointer">
+            <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash</option>
+            <option value="gemini-3.6-flash">⚡ Gemini 3.6 Flash</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
+            <option value="llama-3.1-8b-instant">Llama 3.1 8B (Groq)</option>
+            <option value="llama3.2">Llama 3.2 (Local)</option>
+            <option value="custom">⚙ Custom...</option>
+          </select>
+        </div>
+        <button onclick="clearChat()" class="text-blue-600 hover:text-blue-900 text-xs hover:underline">Clear Chat</button>
+      </div>
     </div>
 
     <div id="chat" class="flex-1 overflow-y-auto scroll p-4 space-y-3.5 bg-slate-50/50"></div>
@@ -510,9 +525,26 @@
 
           <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Model Name</label>
-              <input id="setting-ai-model" type="text" value="gemini-1.5-flash"
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-[11px] font-semibold text-slate-600">Model Name</label>
+                <span class="text-[9px] text-blue-600 font-medium">Gemini 3.8 &amp; 3.6 ready</span>
+              </div>
+              <input id="setting-ai-model" type="text" value="gemini-3.8-flash" list="ai-model-datalist" placeholder="e.g. gemini-3.8-flash"
                      class="w-full text-xs p-2 bg-white border border-slate-200 rounded-md font-mono">
+              <datalist id="ai-model-datalist">
+                <option value="gemini-3.8-flash">Gemini 3.8 Flash (Latest, Fast Reasoning)</option>
+                <option value="gemini-3.6-flash">Gemini 3.6 Flash (High Efficiency, Low Latency)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Groq)</option>
+                <option value="llama-3.1-8b-instant">Llama 3.1 8B (Groq)</option>
+                <option value="llama3.2">Llama 3.2 (Local Ollama)</option>
+              </datalist>
+              <div id="ai-model-presets" class="flex flex-wrap gap-1 mt-1.5">
+                <button type="button" onclick="selectModelPreset('gemini-3.8-flash')" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-mono transition">⚡ 3.8 Flash</button>
+                <button type="button" onclick="selectModelPreset('gemini-3.6-flash')" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-mono transition">⚡ 3.6 Flash</button>
+                <button type="button" onclick="selectModelPreset('gemini-1.5-flash')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 font-mono transition">1.5 Flash</button>
+              </div>
             </div>
             <div id="box-ai-url" class="hidden">
               <label class="block text-[11px] font-semibold text-slate-600 mb-1">Local Base URL</label>
@@ -947,7 +979,7 @@ let ribbonPinnedIds = new Set(JSON.parse(localStorage.getItem('bimcc_ribbon_pinn
 let currentConfig = {
   aiProvider: 'gemini',
   aiApiKey: '',
-  aiModel: 'gemini-1.5-flash',
+  aiModel: 'gemini-3.8-flash',
   aiBaseUrl: 'http://localhost:11434/v1',
   scriptsRoot: '',
   catalogSource: ''
@@ -1167,6 +1199,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
   updateAiBadge();
   updateGhToggleUI();
+  syncCopilotModelDropdown();
   initChips();
   icons();
 });
@@ -1174,7 +1207,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 function loadStoredSettings() {
   currentConfig.aiProvider = localStorage.getItem('bimcc_ai_provider') || 'gemini';
   currentConfig.aiApiKey = localStorage.getItem('bimcc_ai_key') || '';
-  currentConfig.aiModel = localStorage.getItem('bimcc_ai_model') || (currentConfig.aiProvider === 'gemini' ? 'gemini-1.5-flash' : 'llama-3.3-70b-versatile');
+  currentConfig.aiModel = localStorage.getItem('bimcc_ai_model') || (currentConfig.aiProvider === 'gemini' ? 'gemini-3.8-flash' : 'llama-3.3-70b-versatile');
   currentConfig.aiBaseUrl = localStorage.getItem('bimcc_ai_url') || 'http://localhost:11434/v1';
   currentConfig.scriptsRoot = localStorage.getItem('bimcc_scriptsRoot') || '';
   currentConfig.catalogSource = localStorage.getItem('bimcc_catalogSource') || '';
@@ -3203,23 +3236,75 @@ function onAiProviderChange() {
   const boxUrl = document.getElementById('box-ai-url');
   const keyLink = document.getElementById('ai-key-link');
   const modelInput = document.getElementById('setting-ai-model');
+  const presetsBox = document.getElementById('ai-model-presets');
 
   if (p === 'gemini') {
     boxUrl.classList.add('hidden');
     keyLink.href = 'https://aistudio.google.com/app/apikey';
     keyLink.textContent = 'Get Free Gemini Key ↗';
     keyLink.classList.remove('hidden');
-    if (!modelInput.value || modelInput.value.includes('llama')) modelInput.value = 'gemini-1.5-flash';
+    if (!modelInput.value || modelInput.value.includes('llama')) modelInput.value = 'gemini-3.8-flash';
+    if (presetsBox) {
+      presetsBox.innerHTML = `
+        <button type="button" onclick="selectModelPreset('gemini-3.8-flash')" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-mono transition">⚡ 3.8 Flash</button>
+        <button type="button" onclick="selectModelPreset('gemini-3.6-flash')" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-mono transition">⚡ 3.6 Flash</button>
+        <button type="button" onclick="selectModelPreset('gemini-1.5-flash')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 font-mono transition">1.5 Flash</button>
+      `;
+    }
   } else if (p === 'groq') {
     boxUrl.classList.add('hidden');
     keyLink.href = 'https://console.groq.com/keys';
     keyLink.textContent = 'Get Groq Key ↗';
     keyLink.classList.remove('hidden');
     if (!modelInput.value || modelInput.value.includes('gemini')) modelInput.value = 'llama-3.3-70b-versatile';
+    if (presetsBox) {
+      presetsBox.innerHTML = `
+        <button type="button" onclick="selectModelPreset('llama-3.3-70b-versatile')" class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-mono transition">Llama 3.3 70B</button>
+        <button type="button" onclick="selectModelPreset('llama-3.1-8b-instant')" class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-mono transition">Llama 3.1 8B</button>
+      `;
+    }
   } else {
     boxUrl.classList.remove('hidden');
     keyLink.classList.add('hidden');
     if (!modelInput.value) modelInput.value = 'llama3.2';
+    if (presetsBox) {
+      presetsBox.innerHTML = `
+        <button type="button" onclick="selectModelPreset('llama3.2')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 font-mono transition">llama3.2</button>
+        <button type="button" onclick="selectModelPreset('mistral')" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 font-mono transition">mistral</button>
+      `;
+    }
+  }
+}
+
+function selectModelPreset(modelName) {
+  const modelInput = document.getElementById('setting-ai-model');
+  if (modelInput) modelInput.value = modelName;
+}
+
+function quickSwitchModel(modelName) {
+  if (modelName === 'custom') {
+    openSettingsModal();
+    return;
+  }
+  currentConfig.aiModel = modelName;
+  localStorage.setItem('bimcc_ai_model', modelName);
+  const modelInput = document.getElementById('setting-ai-model');
+  if (modelInput) modelInput.value = modelName;
+  syncCopilotModelDropdown();
+  toast(`Copilot AI model switched to ${modelName}`);
+}
+
+function syncCopilotModelDropdown() {
+  const sel = document.getElementById('copilot-model-select');
+  if (!sel) return;
+  const current = currentConfig.aiModel || 'gemini-3.8-flash';
+  const matchingOpt = Array.from(sel.options).find(o => o.value === current);
+  if (matchingOpt) {
+    sel.value = current;
+  } else {
+    let customOpt = Array.from(sel.options).find(o => o.value === 'custom');
+    if (customOpt) customOpt.text = `⚙ Custom (${current})`;
+    sel.value = 'custom';
   }
 }
 
@@ -3246,7 +3331,7 @@ async function testAiConnection() {
     if (provider === 'gemini') {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${key}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      badge.textContent = 'Gemini Connected';
+      badge.textContent = 'Gemini Connected (' + model + ')';
       badge.className = 'text-[10px] text-emerald-600 font-semibold';
       toast('Connected to Google Gemini successfully');
     } else if (provider === 'groq') {
@@ -3309,6 +3394,7 @@ async function saveSettings() {
   } catch (e) {}
 
   updateAiBadge();
+  syncCopilotModelDropdown();
   closeSettingsModal();
   toast('Settings saved successfully. Refreshing tools...');
   await loadCatalog(true);
