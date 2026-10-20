@@ -362,17 +362,17 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            // 4. If target points to a .py script on disk, execute dynamically via pyRevit runtime / IronPython
+            // 4. Standalone & Central Execution: Run via embedded PythonRunner!
+            // Zero-install for team members — pyRevit does NOT need to be installed on every machine!
             if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved))
             {
-                var runRes = TryExecutePyRevitScript(app, resolved, title);
-                if (runRes != null) return runRes;
+                return PythonRunner.Run(app, resolved, title);
             }
 
             return RunResult.Fail(
-                $"Could not execute pyRevit script: \"{title}\".\n\n" +
-                $"Revit {app.Application.VersionNumber} did not find an active pyRevit runtime or ribbon button for this script.\n\n" +
-                "Ensure pyRevit is installed on this workstation and enabled in Revit Manage > Add-ins."
+                $"Python script not found: \"{title}\".\n\n" +
+                $"Path checked: {resolved ?? target}\n\n" +
+                "Verify that the script is located in the Central Library:\n" + _config.ScriptsRoot
             );
         }
 
@@ -455,189 +455,6 @@ namespace BIMCommandCenter.Core.Revit
                         if (!string.IsNullOrEmpty(match)) return match;
                     }
                 }
-            }
-
-            return null;
-        }
-
-        private static RunResult TryExecutePyRevitScript(UIApplication app, string scriptPath, string title)
-        {
-            try
-            {
-                // 1. Prepare environment: script dir, lib subfolder, sysPaths
-                string scriptDir = Path.GetDirectoryName(scriptPath);
-                string scriptLib = Path.Combine(scriptDir, "lib");
-                string scriptBin = Path.Combine(scriptDir, "bin");
-
-                var sysPaths = new List<string> { scriptDir };
-                if (Directory.Exists(scriptLib)) sysPaths.Add(scriptLib);
-                if (Directory.Exists(scriptBin)) sysPaths.Add(scriptBin);
-
-                // Add standard pyRevit library folders
-                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                string[] standardPyRevitLibs = new[]
-                {
-                    Path.Combine(appData, "pyRevit-Master", "pyrevitlib"),
-                    Path.Combine(appData, "pyRevit", "pyrevitlib"),
-                    Path.Combine(appData, "pyRevit-Master", "site-packages"),
-                    Path.Combine(appData, "pyRevit", "site-packages"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "pyRevit", "pyrevitlib")
-                };
-                foreach (var spl in standardPyRevitLibs)
-                {
-                    if (Directory.Exists(spl) && !sysPaths.Contains(spl)) sysPaths.Add(spl);
-                }
-
-                var vars = new Dictionary<string, object>
-                {
-                    ["__revit__"] = app,
-                    ["__uiapp__"] = app,
-                    ["__doc__"] = app.ActiveUIDocument?.Document,
-                    ["__uidoc__"] = app.ActiveUIDocument,
-                    ["__file__"] = scriptPath,
-                    ["__commandpath__"] = scriptPath,
-                    ["__shiftclick__"] = false,
-                    ["__forcedexec__"] = false,
-                    ["EXEC_PARAMS"] = new string[0]
-                };
-
-                // 2. Search for pyRevit loader or runtime assembly
-                var pyAsm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => 
-                    a.GetName().Name.Equals("PyRevitLoader", StringComparison.OrdinalIgnoreCase) ||
-                    a.GetName().Name.StartsWith("pyRevitLabs.PyRevit.Runtime", StringComparison.OrdinalIgnoreCase) ||
-                    a.GetName().Name.StartsWith("pyRevitLabs", StringComparison.OrdinalIgnoreCase));
-
-                // If not yet loaded in AppDomain, check standard install locations
-                if (pyAsm == null)
-                {
-                    string[] loaderCandidates = new[]
-                    {
-                        Path.Combine(appData, "pyRevit-Master", "bin", "pyRevitLoader.dll"),
-                        Path.Combine(appData, "pyRevit", "bin", "pyRevitLoader.dll"),
-                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "pyRevit", "bin", "pyRevitLoader.dll"),
-                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "pyRevit", "bin", "pyRevitLoader.dll")
-                    };
-                    foreach (var cand in loaderCandidates)
-                    {
-                        if (File.Exists(cand))
-                        {
-                            try { pyAsm = Assembly.LoadFrom(cand); break; } catch { }
-                        }
-                    }
-                }
-
-                if (pyAsm != null)
-                {
-                    Type execType = pyAsm.GetType("PyRevitLoader.ScriptExecutor") ??
-                                    pyAsm.GetType("pyRevitLabs.PyRevit.Runtime.ScriptExecutor");
-
-                    if (execType == null)
-                    {
-                        execType = pyAsm.GetTypes().FirstOrDefault(t => t.Name == "ScriptExecutor");
-                    }
-
-                    if (execType != null)
-                    {
-                        object executor = Activator.CreateInstance(execType);
-                        var execMethods = execType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)
-                                                  .Where(m => m.Name.Equals("ExecuteScript", StringComparison.OrdinalIgnoreCase))
-                                                  .OrderByDescending(m => m.GetParameters().Length);
-
-                        foreach (var method in execMethods)
-                        {
-                            var pars = method.GetParameters();
-                            try
-                            {
-                                if (pars.Length == 4)
-                                {
-                                    method.Invoke(executor, new object[] { scriptPath, sysPaths, null, vars });
-                                    return RunResult.Success("Executed " + title);
-                                }
-                                else if (pars.Length == 3)
-                                {
-                                    method.Invoke(executor, new object[] { scriptPath, sysPaths, vars });
-                                    return RunResult.Success("Executed " + title);
-                                }
-                                else if (pars.Length == 2)
-                                {
-                                    method.Invoke(executor, new object[] { scriptPath, sysPaths });
-                                    return RunResult.Success("Executed " + title);
-                                }
-                                else if (pars.Length == 1 && pars[0].ParameterType == typeof(string))
-                                {
-                                    method.Invoke(executor, new object[] { scriptPath });
-                                    return RunResult.Success("Executed " + title);
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Exception inner = ex.InnerException ?? ex;
-                                Log.Write($"ExecuteScript invocation attempt failed ({pars.Length} params): " + inner);
-                            }
-                        }
-                    }
-                }
-
-                // 3. Fallback: Check for IronPython engine in active AppDomain
-                var ironPyAsm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a =>
-                    a.GetName().Name.Equals("IronPython", StringComparison.OrdinalIgnoreCase));
-
-                if (ironPyAsm != null)
-                {
-                    Type pythonType = ironPyAsm.GetType("IronPython.Hosting.Python");
-                    if (pythonType != null)
-                    {
-                        MethodInfo createEngine = pythonType.GetMethod("CreateEngine", Type.EmptyTypes);
-                        if (createEngine != null)
-                        {
-                            object engine = createEngine.Invoke(null, null);
-                            if (engine != null)
-                            {
-                                Type engType = engine.GetType();
-                                MethodInfo createScope = engType.GetMethod("CreateScope", Type.EmptyTypes);
-                                object scope = createScope?.Invoke(engine, null);
-
-                                if (scope != null)
-                                {
-                                    MethodInfo setVar = scope.GetType().GetMethod("SetVariable", new[] { typeof(string), typeof(object) });
-                                    setVar?.Invoke(scope, new object[] { "__revit__", app });
-                                    setVar?.Invoke(scope, new object[] { "__uiapp__", app });
-                                    setVar?.Invoke(scope, new object[] { "__doc__", app.ActiveUIDocument?.Document });
-                                    setVar?.Invoke(scope, new object[] { "__uidoc__", app.ActiveUIDocument });
-                                    setVar?.Invoke(scope, new object[] { "__file__", scriptPath });
-                                    setVar?.Invoke(scope, new object[] { "__commandpath__", scriptPath });
-
-                                    MethodInfo getSys = engType.GetMethod("GetSysModule", Type.EmptyTypes);
-                                    object sys = getSys?.Invoke(engine, null);
-                                    if (sys != null)
-                                    {
-                                        PropertyInfo pathProp = sys.GetType().GetProperty("path");
-                                        object pathObj = pathProp?.GetValue(sys);
-                                        MethodInfo appendMethod = pathObj?.GetType().GetMethod("append", new[] { typeof(object) });
-                                        if (appendMethod != null && pathObj != null)
-                                        {
-                                            foreach (var sp in sysPaths) appendMethod.Invoke(pathObj, new object[] { sp });
-                                        }
-                                    }
-
-                                    MethodInfo execFile = engType.GetMethod("ExecuteFile", new[] { typeof(string), scope.GetType() }) ??
-                                                          engType.GetMethods().FirstOrDefault(m => m.Name == "ExecuteFile" && m.GetParameters().Length == 2);
-                                    if (execFile != null)
-                                    {
-                                        execFile.Invoke(engine, new object[] { scriptPath, scope });
-                                        return RunResult.Success("Executed " + title);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Exception inner = ex.InnerException ?? ex;
-                Log.Write("TryExecutePyRevitScript error: " + inner);
-                return RunResult.Fail("Error executing Python script " + title + ": " + inner.Message);
             }
 
             return null;

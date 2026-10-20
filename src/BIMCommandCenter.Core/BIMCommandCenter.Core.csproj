@@ -12,6 +12,7 @@
     <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="IronPython" Version="3.4.2" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
@@ -26,6 +27,7 @@
     <None Include="..\..\config\config.json" Link="config.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\dummy_catalog.json" Link="data\sample_catalog.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\tools\$(RevitVersion)\**\*" LinkBase="tools" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="pylib\**\*" LinkBase="pylib" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="WriteVersionFile" AfterTargets="Build">
