@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -126,7 +127,8 @@ namespace BIMCommandCenter.Core.Revit
 
         /// <summary>
         /// Reads a .dyn JSON file and extracts configured Inputs, Outputs, and Package Dependencies.
-        /// Supports both Dynamo Player schema ("Inputs": [...]) and standard Dynamo node schema ("IsInput": true).
+        /// Supports both Dynamo Player schema ("Inputs": [...]) and standard Dynamo node schema ("IsInput": true,
+        /// "IsSetAsInput": true, and interactive Selection/Slider/Dropdown/Input nodes).
         /// </summary>
         public static DynamoGraphDetails InspectGraph(string dynPath)
         {
@@ -136,20 +138,21 @@ namespace BIMCommandCenter.Core.Revit
             try
             {
                 string json = File.ReadAllText(dynPath);
+                var dyn = Json.AsObject(Json.Parse(json));
+                if (dyn == null) return details;
 
                 // 1. Extract Inputs array objects (Dynamo Player schema)
-                var inputsMatch = Regex.Match(json, @"""Inputs""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
-                if (inputsMatch.Success)
+                if (dyn.TryGetValue("Inputs", out object inpObj) && inpObj is List<object> inpList)
                 {
-                    var itemMatches = Regex.Matches(inputsMatch.Groups[1].Value, @"\{([^{}]*)\}");
-                    foreach (Match m in itemMatches)
+                    foreach (var item in inpList)
                     {
-                        string block = m.Groups[1].Value;
-                        string id = Regex.Match(block, @"""Id""\s*:\s*""([^""]*)""").Groups[1].Value;
-                        string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
-                        string type = Regex.Match(block, @"""Type""\s*:\s*""([^""]*)""").Groups[1].Value;
-                        string val = Regex.Match(block, @"""Value""\s*:\s*""([^""]*)""").Groups[1].Value;
-                        string desc = Regex.Match(block, @"""Description""\s*:\s*""([^""]*)""").Groups[1].Value;
+                        if (!(item is Dictionary<string, object> dict)) continue;
+
+                        string id = dict.Str("Id");
+                        string name = dict.Str("Name");
+                        string type = dict.Str("Type");
+                        string val = dict.Str("Value");
+                        string desc = dict.Str("Description");
 
                         string typeLower = (type ?? "").ToLowerInvariant();
                         bool isSel = typeLower.Contains("select") ||
@@ -161,30 +164,28 @@ namespace BIMCommandCenter.Core.Revit
                         if (isSel) typeLower = "selection";
 
                         double? minVal = null, maxVal = null, stepVal = null;
-                        if (double.TryParse(Regex.Match(block, @"""MinimumValue""\s*:\s*([-\d\.]+)").Groups[1].Value, out double min)) minVal = min;
-                        if (double.TryParse(Regex.Match(block, @"""MaximumValue""\s*:\s*([-\d\.]+)").Groups[1].Value, out double max)) maxVal = max;
-                        if (double.TryParse(Regex.Match(block, @"""StepValue""\s*:\s*([-\d\.]+)").Groups[1].Value, out double stp)) stepVal = stp;
+                        if (double.TryParse(dict.Str("MinimumValue"), NumberStyles.Any, CultureInfo.InvariantCulture, out double min)) minVal = min;
+                        if (double.TryParse(dict.Str("MaximumValue"), NumberStyles.Any, CultureInfo.InvariantCulture, out double max)) maxVal = max;
+                        if (double.TryParse(dict.Str("StepValue"), NumberStyles.Any, CultureInfo.InvariantCulture, out double stp)) stepVal = stp;
 
                         var optionsList = new List<string>();
-                        var optMatches = Regex.Matches(block, @"""(?:Options|Items)""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
-                        if (optMatches.Count > 0)
+                        if (dict.TryGetValue("Options", out object optObj) && optObj is List<object> oList)
                         {
-                            var rawItems = Regex.Matches(optMatches[0].Groups[1].Value, @"""([^""]*)""");
-                            foreach (Match rm in rawItems)
-                            {
-                                if (!string.IsNullOrWhiteSpace(rm.Groups[1].Value))
-                                    optionsList.Add(rm.Groups[1].Value);
-                            }
+                            foreach (var o in oList) if (o != null) optionsList.Add(o.ToString());
+                        }
+                        else if (dict.TryGetValue("Items", out object itmObj) && itmObj is List<object> iList)
+                        {
+                            foreach (var i in iList) if (i != null) optionsList.Add(i.ToString());
                         }
 
-                        if (!string.IsNullOrWhiteSpace(name))
+                        if (!string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(id))
                         {
                             details.Inputs.Add(new DynamoGraphItem
                             {
                                 Id = string.IsNullOrWhiteSpace(id) ? name : id,
-                                Name = name,
+                                Name = string.IsNullOrWhiteSpace(name) ? "Parameter" : name,
                                 Type = string.IsNullOrWhiteSpace(typeLower) ? "string" : typeLower,
-                                Value = val,
+                                Value = val ?? "",
                                 Description = desc,
                                 IsSelection = isSel,
                                 Min = minVal,
@@ -196,122 +197,196 @@ namespace BIMCommandCenter.Core.Revit
                     }
                 }
 
-                // 2. Scan standard Nodes array for nodes with "IsInput": true OR selection nodes
-                var nodeMatches = Regex.Matches(json, @"\{[^{}]*""(?:IsInput""\s*:\s*true|ConcreteType""\s*:\s*""[^""]*Selection)[^{}]*\}", RegexOptions.Singleline);
-                foreach (Match nm in nodeMatches)
+                // 2. Scan standard Nodes array for nodes with "IsSetAsInput": true, "IsInput": true,
+                // OR candidate selection, slider, dropdown, and basic input nodes.
+                // This ensures graphs show inputs in the mini player even when the user never configured Dynamo Player!
+                if (dyn.TryGetValue("Nodes", out object nodesObj) && nodesObj is List<object> nodeList)
                 {
-                    string block = nm.Value;
-                    string id = Regex.Match(block, @"""Id""\s*:\s*""([^""]*)""").Groups[1].Value;
-                    string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
-                    string val = Regex.Match(block, @"""InputValue""\s*:\s*""?([^"",\}]+)""?").Groups[1].Value;
-                    string concreteType = Regex.Match(block, @"""ConcreteType""\s*:\s*""([^""]*)""").Groups[1].Value;
-
-                    if (string.IsNullOrWhiteSpace(name)) continue;
-
-                    // Skip if already captured in details.Inputs by Id
-                    if (details.Inputs.Any(i => i.Id == id)) continue;
-
-                    string type = "string";
-                    bool isSel = false;
-                    double? minVal = null, maxVal = null, stepVal = null;
-                    var optionsList = new List<string>();
-
-                    if (concreteType.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        concreteType.IndexOf("Selection", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("Select Model Element", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("Select Element", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("Select Face", StringComparison.OrdinalIgnoreCase) >= 0)
+                    foreach (var n in nodeList)
                     {
-                        type = "selection";
-                        isSel = true;
-                    }
-                    else if (concreteType.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        type = "slider";
-                        if (double.TryParse(Regex.Match(block, @"""Min""\s*:\s*([-\d\.]+)").Groups[1].Value, out double nMin)) minVal = nMin;
-                        if (double.TryParse(Regex.Match(block, @"""Max""\s*:\s*([-\d\.]+)").Groups[1].Value, out double nMax)) maxVal = nMax;
-                        if (double.TryParse(Regex.Match(block, @"""Step""\s*:\s*([-\d\.]+)").Groups[1].Value, out double nStep)) stepVal = nStep;
-                        if (string.IsNullOrEmpty(val))
+                        if (!(n is Dictionary<string, object> node)) continue;
+
+                        string id = node.Str("Id");
+                        string name = node.Str("Name");
+                        string concreteType = node.Str("ConcreteType") ?? "";
+                        string desc = node.Str("Description");
+
+                        bool isSetAsInput = node.Bool("IsSetAsInput") || node.Bool("IsInput");
+
+                        bool isSelNode = concreteType.IndexOf("Selection", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         concreteType.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         name.IndexOf("Select Model Element", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         name.IndexOf("Select Element", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         name.IndexOf("Select Face", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         name.IndexOf("Selection", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        bool isSliderNode = concreteType.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            name.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        bool isDropdownNode = concreteType.IndexOf("Categories", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              concreteType.IndexOf("FamilyTypes", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              concreteType.IndexOf("Levels", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              concreteType.IndexOf("Phases", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              concreteType.IndexOf("Views", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              concreteType.IndexOf("Sheets", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              concreteType.IndexOf("WallTypes", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              name.Equals("Categories", StringComparison.OrdinalIgnoreCase) ||
+                                              name.Equals("Family Types", StringComparison.OrdinalIgnoreCase) ||
+                                              name.Equals("Levels", StringComparison.OrdinalIgnoreCase);
+
+                        bool isBasicInputNode = concreteType.IndexOf("StringInput", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                concreteType.IndexOf("DoubleInput", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                concreteType.IndexOf("IntegerInput", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                concreteType.IndexOf("BoolSelector", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                concreteType.IndexOf("Filename", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                concreteType.IndexOf("Directory", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                name.Equals("String", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Equals("Number", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Equals("Integer", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Equals("Boolean", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Equals("File Path", StringComparison.OrdinalIgnoreCase) ||
+                                                name.Equals("Directory Path", StringComparison.OrdinalIgnoreCase);
+
+                        bool isSymbolNode = concreteType.IndexOf("Symbol", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        // Include if explicitly marked as input, OR recognized as interactive / parameter input node
+                        if (!isSetAsInput && !isSelNode && !isSliderNode && !isDropdownNode && !isBasicInputNode && !isSymbolNode)
                         {
-                            val = Regex.Match(block, @"""Number""\s*:\s*([-\d\.]+)").Groups[1].Value;
+                            continue;
                         }
-                    }
-                    else if (concreteType.IndexOf("number", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("double", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("integer", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        type = "number";
-                    }
-                    else if (concreteType.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        type = "boolean";
-                    }
-                    else if (concreteType.IndexOf("file", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("path", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        type = "filepath";
-                    }
-                    else if (concreteType.IndexOf("directory", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        type = "directorypath";
-                    }
-                    else if (concreteType.IndexOf("Categories", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("FamilyTypes", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("Levels", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("Phases", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("Views", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("Sheets", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             concreteType.IndexOf("WallTypes", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        type = "dropdown";
-                        string selStr = Regex.Match(block, @"""SelectedString""\s*:\s*""([^""]*)""").Groups[1].Value;
-                        if (!string.IsNullOrWhiteSpace(selStr)) val = selStr;
-                    }
 
-                    details.Inputs.Add(new DynamoGraphItem
-                    {
-                        Id = id,
-                        Name = name,
-                        Type = type,
-                        Value = val,
-                        Description = isSel ? "Select model elements in active Revit view" : "Dynamo node input",
-                        IsSelection = isSel,
-                        Min = minVal,
-                        Max = maxVal,
-                        Step = stepVal,
-                        Options = optionsList
-                    });
+                        // Skip if already captured in details.Inputs by Id
+                        if (!string.IsNullOrEmpty(id) && details.Inputs.Any(i => i.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
+
+                        string type = "string";
+                        bool isSel = false;
+                        double? minVal = null, maxVal = null, stepVal = null;
+                        var optionsList = new List<string>();
+                        string val = node.Str("InputValue");
+
+                        if (isSelNode)
+                        {
+                            type = "selection";
+                            isSel = true;
+                            if (string.IsNullOrWhiteSpace(name)) name = "Select Model Elements";
+                        }
+                        else if (isSliderNode)
+                        {
+                            type = "slider";
+                            if (double.TryParse(node.Str("Min"), NumberStyles.Any, CultureInfo.InvariantCulture, out double nMin)) minVal = nMin;
+                            if (double.TryParse(node.Str("Max"), NumberStyles.Any, CultureInfo.InvariantCulture, out double nMax)) maxVal = nMax;
+                            if (double.TryParse(node.Str("Step"), NumberStyles.Any, CultureInfo.InvariantCulture, out double nStep)) stepVal = nStep;
+                            if (string.IsNullOrEmpty(val)) val = node.Str("Number");
+                        }
+                        else if (concreteType.IndexOf("number", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("double", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("integer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.Equals("Number", StringComparison.OrdinalIgnoreCase) ||
+                                 name.Equals("Integer", StringComparison.OrdinalIgnoreCase))
+                        {
+                            type = "number";
+                            if (string.IsNullOrEmpty(val)) val = node.Str("Number");
+                        }
+                        else if (concreteType.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
+                        {
+                            type = "boolean";
+                        }
+                        else if (concreteType.IndexOf("file", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("path", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.Equals("File Path", StringComparison.OrdinalIgnoreCase))
+                        {
+                            type = "filepath";
+                        }
+                        else if (concreteType.IndexOf("directory", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.Equals("Directory Path", StringComparison.OrdinalIgnoreCase))
+                        {
+                            type = "directorypath";
+                        }
+                        else if (isDropdownNode)
+                        {
+                            type = "dropdown";
+                            string selStr = node.Str("SelectedString");
+                            if (!string.IsNullOrWhiteSpace(selStr)) val = selStr;
+
+                            if (concreteType.IndexOf("Categories", StringComparison.OrdinalIgnoreCase) >= 0 || name.Equals("Categories", StringComparison.OrdinalIgnoreCase))
+                            {
+                                optionsList = new List<string>
+                                {
+                                    "OST_Doors", "OST_Windows", "OST_Walls", "OST_Rooms", "OST_Floors",
+                                    "OST_Ceilings", "OST_Columns", "OST_StructuralColumns", "OST_StructuralFraming",
+                                    "OST_DuctCurves", "OST_PipeCurves", "OST_Furniture", "OST_GenericModel", "OST_Views"
+                                };
+                                if (!string.IsNullOrEmpty(val) && !optionsList.Contains(val)) optionsList.Insert(0, val);
+                            }
+                        }
+                        else if (isSymbolNode)
+                        {
+                            if (node.TryGetValue("Parameter", out object paramObj) && paramObj is Dictionary<string, object> paramDict)
+                            {
+                                string pName = paramDict.Str("Name");
+                                if (!string.IsNullOrEmpty(pName)) name = pName;
+                                val = paramDict.Str("DefaultValue");
+                            }
+                        }
+
+                        if (string.IsNullOrWhiteSpace(name))
+                        {
+                            name = !string.IsNullOrWhiteSpace(concreteType) ? concreteType.Split(',')[0].Split('.').Last() : "Input";
+                        }
+
+                        details.Inputs.Add(new DynamoGraphItem
+                        {
+                            Id = string.IsNullOrWhiteSpace(id) ? name : id,
+                            Name = name,
+                            Type = type,
+                            Value = val ?? "",
+                            Description = isSel ? "Select model elements in active Revit view" : (string.IsNullOrWhiteSpace(desc) ? "Dynamo node input" : desc),
+                            IsSelection = isSel,
+                            Min = minVal,
+                            Max = maxVal,
+                            Step = stepVal,
+                            Options = optionsList
+                        });
+                    }
                 }
 
                 // 3. Extract Outputs array objects
-                var outputsMatch = Regex.Match(json, @"""Outputs""\s*:\s*\[(.*?)\]", RegexOptions.Singleline);
-                if (outputsMatch.Success)
+                if (dyn.TryGetValue("Outputs", out object outObj) && outObj is List<object> outList)
                 {
-                    var itemMatches = Regex.Matches(outputsMatch.Groups[1].Value, @"\{([^{}]*)\}");
-                    foreach (Match m in itemMatches)
+                    foreach (var o in outList)
                     {
-                        string block = m.Groups[1].Value;
-                        string name = Regex.Match(block, @"""Name""\s*:\s*""([^""]*)""").Groups[1].Value;
-                        string desc = Regex.Match(block, @"""Description""\s*:\s*""([^""]*)""").Groups[1].Value;
-
-                        if (!string.IsNullOrWhiteSpace(name))
+                        if (o is Dictionary<string, object> oDict)
                         {
-                            details.Outputs.Add(new DynamoGraphItem
+                            string oName = oDict.Str("Name");
+                            string oDesc = oDict.Str("Description");
+                            if (!string.IsNullOrWhiteSpace(oName))
                             {
-                                Name = name,
-                                Description = desc
-                            });
+                                details.Outputs.Add(new DynamoGraphItem
+                                {
+                                    Name = oName,
+                                    Description = oDesc
+                                });
+                            }
                         }
                     }
                 }
 
                 // 4. Extract Dependencies from NodeLibraryDependencies
-                var depMatches = Regex.Matches(json, @"""Name""\s*:\s*""([^""]*)""\s*,\s*""Version""");
-                foreach (Match dm in depMatches)
+                if (dyn.TryGetValue("NodeLibraryDependencies", out object depObj) && depObj is List<object> depList)
                 {
-                    string dep = dm.Groups[1].Value;
-                    if (!string.IsNullOrWhiteSpace(dep) && !details.Dependencies.Contains(dep))
-                        details.Dependencies.Add(dep);
+                    foreach (var d in depList)
+                    {
+                        if (d is Dictionary<string, object> dDict)
+                        {
+                            string depName = dDict.Str("Name");
+                            if (!string.IsNullOrWhiteSpace(depName) && !details.Dependencies.Contains(depName))
+                                details.Dependencies.Add(depName);
+                        }
+                    }
                 }
             }
             catch (Exception ex)
@@ -334,103 +409,109 @@ namespace BIMCommandCenter.Core.Revit
             try
             {
                 string json = File.ReadAllText(dynPath);
+                var dyn = Json.AsObject(Json.Parse(json));
+                if (dyn == null) return dynPath;
 
-                foreach (var kvp in inputOverrides)
+                // 1. Update Inputs array (Dynamo Player schema)
+                if (dyn.TryGetValue("Inputs", out object inpObj) && inpObj is List<object> inpList)
                 {
-                    string key = kvp.Key;
-                    string val = kvp.Value ?? "";
-
-                    // Check if value is a selection list (comma-separated UniqueIds, e.g. "guid1,guid2")
-                    string[] uids = val.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                                       .Select(s => s.Trim().Trim('"', '\'', '[', ']', ' '))
-                                       .Where(s => !string.IsNullOrEmpty(s))
-                                       .ToArray();
-
-                    bool looksLikeSelection = uids.Length > 0 && (key.IndexOf("select", StringComparison.OrdinalIgnoreCase) >= 0 || uids.Any(u => u.Contains("-")));
-
-                    if (looksLikeSelection)
+                    foreach (var inpItem in inpList)
                     {
-                        // 1. Update in Inputs array by Id or Name
-                        string idInputPattern = @"(\{\s*""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""Value""\s*:\s*"")([^""]*)("".*?\})";
-                        if (Regex.IsMatch(json, idInputPattern, RegexOptions.Singleline))
-                        {
-                            json = Regex.Replace(json, idInputPattern, "${1}" + uids[0].Replace("$", "$$") + "${3}", RegexOptions.Singleline);
-                        }
+                        if (!(inpItem is Dictionary<string, object> inp)) continue;
+                        string id = inp.Str("Id");
+                        string name = inp.Str("Name");
 
-                        // 2. Format selectionIdentifier for JSON: [ "uid1", "uid2" ]
-                        string formattedUids = string.Join(", ", uids.Select(u => $"\"{u}\""));
+                        string overrideVal = null;
+                        if (!string.IsNullOrEmpty(id) && inputOverrides.TryGetValue(id, out string ov1)) overrideVal = ov1;
+                        else if (!string.IsNullOrEmpty(name) && inputOverrides.TryGetValue(name, out string ov2)) overrideVal = ov2;
 
-                        // In Nodes array: try updating existing selectionIdentifier
-                        string selPattern = @"(""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""selectionIdentifier""\s*:\s*\[)(.*?)(\])";
-                        if (Regex.IsMatch(json, selPattern, RegexOptions.Singleline))
+                        if (overrideVal != null)
                         {
-                            json = Regex.Replace(json, selPattern, "${1} " + formattedUids.Replace("$", "$$") + " ${3}", RegexOptions.Singleline);
-                        }
-                        else
-                        {
-                            // Try inserting selectionIdentifier before "Id"
-                            string insertSelPattern = @"(\{.*?)(""Id""\s*:\s*""" + Regex.Escape(key) + @""")";
-                            if (Regex.IsMatch(json, insertSelPattern, RegexOptions.Singleline))
-                            {
-                                json = Regex.Replace(json, insertSelPattern, "${1}\"selectionIdentifier\": [ " + formattedUids.Replace("$", "$$") + " ], ${2}", RegexOptions.Singleline);
-                            }
-                        }
-
-                        // Also update SelectedElementId if present
-                        string singleSelPattern = @"(""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""SelectedElementId""\s*:\s*"")([^""]*)("")";
-                        if (Regex.IsMatch(json, singleSelPattern, RegexOptions.Singleline))
-                        {
-                            json = Regex.Replace(json, singleSelPattern, "${1}" + uids[0].Replace("$", "$$") + "${3}", RegexOptions.Singleline);
-                        }
-                    }
-                    else
-                    {
-                        // 1. Update in Inputs array by Id
-                        string idPattern = @"(\{\s*""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""Value""\s*:\s*"")([^""]*)("".*?\})";
-                        if (Regex.IsMatch(json, idPattern, RegexOptions.Singleline))
-                        {
-                            json = Regex.Replace(json, idPattern, "${1}" + val.Replace("$", "$$") + "${3}", RegexOptions.Singleline);
-                        }
-                        else
-                        {
-                            // Match in Inputs array by Name
-                            string namePattern = @"(\{\s*""Name""\s*:\s*""" + Regex.Escape(key) + @""".*?""Value""\s*:\s*"")([^""]*)("".*?\})";
-                            if (Regex.IsMatch(json, namePattern, RegexOptions.Singleline))
-                            {
-                                json = Regex.Replace(json, namePattern, "${1}" + val.Replace("$", "$$") + "${3}", RegexOptions.Singleline);
-                            }
-                        }
-
-                        // 2. Update in Nodes array by Id: InputValue
-                        string nodePattern = @"(""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""InputValue""\s*:\s*)([^,\}\s]+)";
-                        if (Regex.IsMatch(json, nodePattern, RegexOptions.Singleline))
-                        {
-                            string formattedVal = (val == "true" || val == "false" || double.TryParse(val, out _))
-                                ? val
-                                : "\"" + val.Replace("\"", "\\\"") + "\"";
-                            json = Regex.Replace(json, nodePattern, "${1}" + formattedVal, RegexOptions.Singleline);
-                        }
-
-                        // 3. Update Number (sliders)
-                        string numPattern = @"(""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""Number""\s*:\s*)([^,\}\s]+)";
-                        if (Regex.IsMatch(json, numPattern, RegexOptions.Singleline) && double.TryParse(val, out _))
-                        {
-                            json = Regex.Replace(json, numPattern, "${1}" + val, RegexOptions.Singleline);
-                        }
-
-                        // 4. Update SelectedString (dropdowns)
-                        string selStrPattern = @"(""Id""\s*:\s*""" + Regex.Escape(key) + @""".*?""SelectedString""\s*:\s*"")([^""]*)("")";
-                        if (Regex.IsMatch(json, selStrPattern, RegexOptions.Singleline))
-                        {
-                            json = Regex.Replace(json, selStrPattern, "${1}" + val.Replace("$", "$$") + "${3}", RegexOptions.Singleline);
+                            inp["Value"] = overrideVal;
                         }
                     }
                 }
 
+                // 2. Update Nodes array (standard Dynamo schema)
+                if (dyn.TryGetValue("Nodes", out object nodesObj) && nodesObj is List<object> nodeList)
+                {
+                    foreach (var nodeItem in nodeList)
+                    {
+                        if (!(nodeItem is Dictionary<string, object> node)) continue;
+                        string id = node.Str("Id");
+                        string name = node.Str("Name");
+                        string concreteType = node.Str("ConcreteType") ?? "";
+
+                        string overrideVal = null;
+                        if (!string.IsNullOrEmpty(id) && inputOverrides.TryGetValue(id, out string ov1)) overrideVal = ov1;
+                        else if (!string.IsNullOrEmpty(name) && inputOverrides.TryGetValue(name, out string ov2)) overrideVal = ov2;
+
+                        if (overrideVal == null) continue;
+
+                        bool isSel = concreteType.IndexOf("Selection", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                     concreteType.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                     name.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                        if (isSel)
+                        {
+                            var uids = overrideVal.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                                  .Select(s => s.Trim().Trim('"', '\'', '[', ']', ' '))
+                                                  .Where(s => !string.IsNullOrEmpty(s))
+                                                  .Cast<object>()
+                                                  .ToList();
+                            if (uids.Count > 0)
+                            {
+                                node["selectionIdentifier"] = uids;
+                                node["InputValue"] = uids[0].ToString();
+                            }
+                        }
+                        else if (concreteType.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            if (double.TryParse(overrideVal, NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal))
+                            {
+                                node["Number"] = dVal;
+                                node["InputValue"] = dVal;
+                            }
+                            else
+                            {
+                                node["Number"] = overrideVal;
+                                node["InputValue"] = overrideVal;
+                            }
+                        }
+                        else if (concreteType.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
+                        {
+                            bool bVal = overrideVal.Equals("true", StringComparison.OrdinalIgnoreCase) || overrideVal == "1";
+                            node["InputValue"] = bVal;
+                        }
+                        else if (concreteType.IndexOf("Categories", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("FamilyTypes", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("Levels", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("Phases", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            node["SelectedString"] = overrideVal;
+                            node["InputValue"] = overrideVal;
+                        }
+                        else
+                        {
+                            if (double.TryParse(overrideVal, NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal))
+                            {
+                                node["InputValue"] = dVal;
+                            }
+                            else
+                            {
+                                node["InputValue"] = overrideVal;
+                            }
+                        }
+                    }
+                }
+
+                string newJson = Json.Stringify(dyn);
                 string tempDir = Path.Combine(Path.GetTempPath(), "BIMCommandCenter", "DynamoExec");
                 Directory.CreateDirectory(tempDir);
                 string tempPath = Path.Combine(tempDir, Path.GetFileNameWithoutExtension(dynPath) + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".dyn");
-                File.WriteAllText(tempPath, json);
+                File.WriteAllText(tempPath, newJson);
                 return tempPath;
             }
             catch (Exception ex)

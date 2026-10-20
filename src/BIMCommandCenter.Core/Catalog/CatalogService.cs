@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BIMCommandCenter.Core.Infrastructure;
+using BIMCommandCenter.Core.Revit;
 using BIMCommandCenter.Core.Security;
 
 namespace BIMCommandCenter.Core.Catalog
@@ -378,11 +379,14 @@ namespace BIMCommandCenter.Core.Catalog
                             continue;
                         }
 
-                        // 3. If standard pyRevit pushbutton (script.py), derive baseName from the folder name
+                        // 3. If standard pyRevit pushbutton (script.py), derive baseName from the folder name (unless it's just the root PyRevit folder)
                         if (fileName.Equals("script.py", StringComparison.OrdinalIgnoreCase))
                         {
                             string parentFolder = Path.GetFileName(dir);
-                            if (!string.IsNullOrEmpty(parentFolder))
+                            if (!string.IsNullOrEmpty(parentFolder) &&
+                                !parentFolder.Equals("pyrevit", StringComparison.OrdinalIgnoreCase) &&
+                                !parentFolder.Equals("python", StringComparison.OrdinalIgnoreCase) &&
+                                !parentFolder.Equals("scripts", StringComparison.OrdinalIgnoreCase))
                             {
                                 string cleanParent = Regex.Replace(parentFolder, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown)$", "", RegexOptions.IgnoreCase);
                                 if (!string.IsNullOrWhiteSpace(cleanParent))
@@ -556,47 +560,43 @@ namespace BIMCommandCenter.Core.Catalog
             catch { }
 
             // 2. Dynamo (.dyn) parser: Dynamo files are JSON containing Description, Author, NodeLibraryDependencies, Inputs
-            if (string.IsNullOrEmpty(meta.Description) && ext.Equals(".dyn", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
+            if (ext.Equals(".dyn", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
             {
                 try
                 {
-                    string json = File.ReadAllText(targetPath);
-                    var dyn = Json.AsObject(Json.Parse(json));
-                    if (dyn != null)
+                    var details = DynamoPackageInspector.InspectGraph(targetPath);
+                    if (details.Dependencies.Count > 0 && (string.IsNullOrEmpty(meta.PackagesRequired) || meta.PackagesRequired == "None"))
                     {
-                        if (dyn.TryGetValue("Description", out object d) && d is string ds && !string.IsNullOrWhiteSpace(ds))
-                            meta.Description = ds.Trim();
+                        meta.PackagesRequired = string.Join(", ", details.Dependencies);
+                    }
 
-                        if (dyn.TryGetValue("Author", out object a) && a is string asStr && !string.IsNullOrWhiteSpace(asStr))
-                            meta.Author = asStr.Trim();
-
-                        if (dyn.TryGetValue("NodeLibraryDependencies", out object deps) && deps is List<object> depList && depList.Count > 0)
+                    // Populate parameters from details.Inputs (both Dynamo Player schema and all detected interactive nodes)
+                    foreach (var inp in details.Inputs)
+                    {
+                        meta.Parameters.Add(new Dictionary<string, object>
                         {
-                            var depNames = new List<string>();
-                            foreach (var depObj in depList)
-                            {
-                                if (depObj is Dictionary<string, object> depDict && depDict.TryGetValue("Name", out object dn) && dn != null)
-                                    depNames.Add(dn.ToString());
-                            }
-                            if (depNames.Count > 0) meta.PackagesRequired = string.Join(", ", depNames);
-                        }
+                            ["id"] = inp.Id,
+                            ["name"] = inp.Name,
+                            ["type"] = inp.Type,
+                            ["value"] = inp.Value,
+                            ["description"] = inp.Description,
+                            ["isSelection"] = inp.IsSelection,
+                            ["required"] = false
+                        });
+                    }
 
-                        if (dyn.TryGetValue("Inputs", out object inp) && inp is List<object> inpList)
+                    // Also extract Description and Author from the JSON if not already set
+                    if (string.IsNullOrEmpty(meta.Description) || string.IsNullOrEmpty(meta.Author))
+                    {
+                        string json = File.ReadAllText(targetPath);
+                        var dyn = Json.AsObject(Json.Parse(json));
+                        if (dyn != null)
                         {
-                            foreach (var item in inpList)
-                            {
-                                if (item is Dictionary<string, object> inpDict)
-                                {
-                                    string pName = inpDict.TryGetValue("Name", out object pn) ? pn?.ToString() : "Parameter";
-                                    string pType = inpDict.TryGetValue("Type", out object pt) ? pt?.ToString() : "string";
-                                    meta.Parameters.Add(new Dictionary<string, object>
-                                    {
-                                        ["name"] = pName,
-                                        ["type"] = pType,
-                                        ["required"] = false
-                                    });
-                                }
-                            }
+                            if (string.IsNullOrEmpty(meta.Description) && dyn.TryGetValue("Description", out object d) && d is string ds && !string.IsNullOrWhiteSpace(ds))
+                                meta.Description = ds.Trim();
+
+                            if (string.IsNullOrEmpty(meta.Author) && dyn.TryGetValue("Author", out object a) && a is string asStr && !string.IsNullOrWhiteSpace(asStr))
+                                meta.Author = asStr.Trim();
                         }
                     }
                 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -224,15 +225,33 @@ namespace BIMCommandCenter.Core.Revit
             {
                 Log.Write($"Running Dynamo script '{scriptName}' headlessly via DynamoRevit journal automation.");
                 var runRes = DynamoRunner.Run(app, pathToExecute, headless: true);
-                if (pkgCheck.HasMissing)
+                if (pkgCheck != null && pkgCheck.HasMissing && runRes != null)
                 {
                     runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
                 }
-                return runRes;
+
+                if (runRes != null && !runRes.Ok)
+                {
+                    Log.Write($"Headless Dynamo run was not ok ({runRes.Message}). Falling back to Dynamo Player.");
+                    var playerRes = LaunchDynamoPlayer(app, dynPath, tool, pkgCheck);
+                    if (playerRes != null && playerRes.Ok)
+                    {
+                        playerRes.Warnings.Add("Notice: Script launched in Dynamo Player for interactive execution.");
+                        return playerRes;
+                    }
+                }
+
+                return runRes ?? RunResult.Fail("Dynamo execution did not return a result.");
             }
             catch (Exception ex)
             {
-                Log.Write("Headless Dynamo execution exception: " + ex.Message);
+                Log.Write("Headless Dynamo execution exception: " + ex.Message + ". Falling back to Dynamo Player.");
+                var playerRes = LaunchDynamoPlayer(app, dynPath, tool, pkgCheck);
+                if (playerRes != null && playerRes.Ok)
+                {
+                    playerRes.Warnings.Add("Notice: Script launched in Dynamo Player for interactive execution.");
+                    return playerRes;
+                }
                 return RunResult.Fail("Error executing " + scriptName + ": " + ex.Message);
             }
             finally
@@ -331,7 +350,19 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            // 3. If target points to a .py script on disk, try dynamic pyRevit executor if pyRevit is loaded in Revit
+            // 3. Search Revit Ribbon dynamically via ComponentManager for any matching button
+            string ribbonCmdId = FindRibbonCommandId(baseName, title);
+            if (!string.IsNullOrEmpty(ribbonCmdId))
+            {
+                id = RevitCommandId.LookupCommandId(ribbonCmdId);
+                if (id != null && app.CanPostCommand(id))
+                {
+                    app.PostCommand(id);
+                    return RunResult.Success("Started " + title);
+                }
+            }
+
+            // 4. If target points to a .py script on disk, execute dynamically via pyRevit runtime / IronPython
             if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved))
             {
                 var runRes = TryExecutePyRevitScript(app, resolved, title);
@@ -339,40 +370,276 @@ namespace BIMCommandCenter.Core.Revit
             }
 
             return RunResult.Fail(
-                $"Ribbon command or pyRevit button not found: \"{title}\".\n\n" +
-                "Ensure pyRevit is installed on this workstation and the extension/button is loaded in Revit."
+                $"Could not execute pyRevit script: \"{title}\".\n\n" +
+                $"Revit {app.Application.VersionNumber} did not find an active pyRevit runtime or ribbon button for this script.\n\n" +
+                "Ensure pyRevit is installed on this workstation and enabled in Revit Manage > Add-ins."
             );
+        }
+
+        private static string FindRibbonCommandId(string baseName, string title)
+        {
+            try
+            {
+                Assembly adWindows = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "AdWindows");
+                if (adWindows == null) return null;
+
+                Type cmType = adWindows.GetType("Autodesk.Windows.ComponentManager");
+                PropertyInfo rcProp = cmType?.GetProperty("Ribbon", BindingFlags.Public | BindingFlags.Static);
+                object ribbon = rcProp?.GetValue(null);
+                if (ribbon == null) return null;
+
+                PropertyInfo tabsProp = ribbon.GetType().GetProperty("Tabs");
+                IEnumerable tabs = tabsProp?.GetValue(ribbon) as IEnumerable;
+                if (tabs == null) return null;
+
+                string cleanBase = Regex.Replace(baseName ?? "", @"[^a-zA-Z0-9]", "").ToLowerInvariant();
+                string cleanTitle = Regex.Replace(title ?? "", @"[^a-zA-Z0-9]", "").ToLowerInvariant();
+
+                foreach (object tab in tabs)
+                {
+                    PropertyInfo panelsProp = tab.GetType().GetProperty("Panels");
+                    IEnumerable panels = panelsProp?.GetValue(tab) as IEnumerable;
+                    if (panels == null) continue;
+
+                    foreach (object panel in panels)
+                    {
+                        PropertyInfo sourceProp = panel.GetType().GetProperty("Source");
+                        object source = sourceProp?.GetValue(panel);
+                        if (source == null) continue;
+
+                        PropertyInfo itemsProp = source.GetType().GetProperty("Items");
+                        IEnumerable items = itemsProp?.GetValue(source) as IEnumerable;
+                        if (items == null) continue;
+
+                        foreach (object item in items)
+                        {
+                            string match = MatchRibbonItem(item, cleanBase, cleanTitle);
+                            if (!string.IsNullOrEmpty(match)) return match;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string MatchRibbonItem(object item, string cleanBase, string cleanTitle)
+        {
+            if (item == null) return null;
+            Type itemType = item.GetType();
+
+            string id = itemType.GetProperty("Id")?.GetValue(item) as string;
+            string text = itemType.GetProperty("Text")?.GetValue(item) as string;
+
+            string cleanId = Regex.Replace(id ?? "", @"[^a-zA-Z0-9]", "").ToLowerInvariant();
+            string cleanText = Regex.Replace(text ?? "", @"[^a-zA-Z0-9]", "").ToLowerInvariant();
+
+            if (!string.IsNullOrEmpty(id))
+            {
+                if ((!string.IsNullOrEmpty(cleanBase) && (cleanId.EndsWith(cleanBase) || cleanText.Equals(cleanBase))) ||
+                    (!string.IsNullOrEmpty(cleanTitle) && (cleanId.EndsWith(cleanTitle) || cleanText.Equals(cleanTitle))))
+                {
+                    return id;
+                }
+            }
+
+            PropertyInfo subItemsProp = itemType.GetProperty("Items");
+            if (subItemsProp != null)
+            {
+                IEnumerable subItems = subItemsProp.GetValue(item) as IEnumerable;
+                if (subItems != null)
+                {
+                    foreach (object sub in subItems)
+                    {
+                        string match = MatchRibbonItem(sub, cleanBase, cleanTitle);
+                        if (!string.IsNullOrEmpty(match)) return match;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private static RunResult TryExecutePyRevitScript(UIApplication app, string scriptPath, string title)
         {
             try
             {
+                // 1. Prepare environment: script dir, lib subfolder, sysPaths
+                string scriptDir = Path.GetDirectoryName(scriptPath);
+                string scriptLib = Path.Combine(scriptDir, "lib");
+                string scriptBin = Path.Combine(scriptDir, "bin");
+
+                var sysPaths = new List<string> { scriptDir };
+                if (Directory.Exists(scriptLib)) sysPaths.Add(scriptLib);
+                if (Directory.Exists(scriptBin)) sysPaths.Add(scriptBin);
+
+                // Add standard pyRevit library folders
+                string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                string[] standardPyRevitLibs = new[]
+                {
+                    Path.Combine(appData, "pyRevit-Master", "pyrevitlib"),
+                    Path.Combine(appData, "pyRevit", "pyrevitlib"),
+                    Path.Combine(appData, "pyRevit-Master", "site-packages"),
+                    Path.Combine(appData, "pyRevit", "site-packages"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "pyRevit", "pyrevitlib")
+                };
+                foreach (var spl in standardPyRevitLibs)
+                {
+                    if (Directory.Exists(spl) && !sysPaths.Contains(spl)) sysPaths.Add(spl);
+                }
+
+                var vars = new Dictionary<string, object>
+                {
+                    ["__revit__"] = app,
+                    ["__uiapp__"] = app,
+                    ["__doc__"] = app.ActiveUIDocument?.Document,
+                    ["__uidoc__"] = app.ActiveUIDocument,
+                    ["__file__"] = scriptPath,
+                    ["__commandpath__"] = scriptPath,
+                    ["__shiftclick__"] = false,
+                    ["__forcedexec__"] = false,
+                    ["EXEC_PARAMS"] = new string[0]
+                };
+
+                // 2. Search for pyRevit loader or runtime assembly
                 var pyAsm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => 
                     a.GetName().Name.Equals("PyRevitLoader", StringComparison.OrdinalIgnoreCase) ||
-                    a.GetName().Name.StartsWith("pyRevitLabs.PyRevit.Runtime", StringComparison.OrdinalIgnoreCase));
+                    a.GetName().Name.StartsWith("pyRevitLabs.PyRevit.Runtime", StringComparison.OrdinalIgnoreCase) ||
+                    a.GetName().Name.StartsWith("pyRevitLabs", StringComparison.OrdinalIgnoreCase));
+
+                // If not yet loaded in AppDomain, check standard install locations
+                if (pyAsm == null)
+                {
+                    string[] loaderCandidates = new[]
+                    {
+                        Path.Combine(appData, "pyRevit-Master", "bin", "pyRevitLoader.dll"),
+                        Path.Combine(appData, "pyRevit", "bin", "pyRevitLoader.dll"),
+                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "pyRevit", "bin", "pyRevitLoader.dll"),
+                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "pyRevit", "bin", "pyRevitLoader.dll")
+                    };
+                    foreach (var cand in loaderCandidates)
+                    {
+                        if (File.Exists(cand))
+                        {
+                            try { pyAsm = Assembly.LoadFrom(cand); break; } catch { }
+                        }
+                    }
+                }
 
                 if (pyAsm != null)
                 {
                     Type execType = pyAsm.GetType("PyRevitLoader.ScriptExecutor") ??
                                     pyAsm.GetType("pyRevitLabs.PyRevit.Runtime.ScriptExecutor");
 
+                    if (execType == null)
+                    {
+                        execType = pyAsm.GetTypes().FirstOrDefault(t => t.Name == "ScriptExecutor");
+                    }
+
                     if (execType != null)
                     {
                         object executor = Activator.CreateInstance(execType);
-                        MethodInfo execMethod = execType.GetMethod("ExecuteScript", new[] { typeof(string) });
-                        if (execMethod != null)
+                        var execMethods = execType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)
+                                                  .Where(m => m.Name.Equals("ExecuteScript", StringComparison.OrdinalIgnoreCase))
+                                                  .OrderByDescending(m => m.GetParameters().Length);
+
+                        foreach (var method in execMethods)
                         {
-                            execMethod.Invoke(executor, new object[] { scriptPath });
-                            return RunResult.Success("Executed " + title);
+                            var pars = method.GetParameters();
+                            try
+                            {
+                                if (pars.Length == 4)
+                                {
+                                    method.Invoke(executor, new object[] { scriptPath, sysPaths, null, vars });
+                                    return RunResult.Success("Executed " + title);
+                                }
+                                else if (pars.Length == 3)
+                                {
+                                    method.Invoke(executor, new object[] { scriptPath, sysPaths, vars });
+                                    return RunResult.Success("Executed " + title);
+                                }
+                                else if (pars.Length == 2)
+                                {
+                                    method.Invoke(executor, new object[] { scriptPath, sysPaths });
+                                    return RunResult.Success("Executed " + title);
+                                }
+                                else if (pars.Length == 1 && pars[0].ParameterType == typeof(string))
+                                {
+                                    method.Invoke(executor, new object[] { scriptPath });
+                                    return RunResult.Success("Executed " + title);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Exception inner = ex.InnerException ?? ex;
+                                Log.Write($"ExecuteScript invocation attempt failed ({pars.Length} params): " + inner);
+                            }
+                        }
+                    }
+                }
+
+                // 3. Fallback: Check for IronPython engine in active AppDomain
+                var ironPyAsm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a =>
+                    a.GetName().Name.Equals("IronPython", StringComparison.OrdinalIgnoreCase));
+
+                if (ironPyAsm != null)
+                {
+                    Type pythonType = ironPyAsm.GetType("IronPython.Hosting.Python");
+                    if (pythonType != null)
+                    {
+                        MethodInfo createEngine = pythonType.GetMethod("CreateEngine", Type.EmptyTypes);
+                        if (createEngine != null)
+                        {
+                            object engine = createEngine.Invoke(null, null);
+                            if (engine != null)
+                            {
+                                Type engType = engine.GetType();
+                                MethodInfo createScope = engType.GetMethod("CreateScope", Type.EmptyTypes);
+                                object scope = createScope?.Invoke(engine, null);
+
+                                if (scope != null)
+                                {
+                                    MethodInfo setVar = scope.GetType().GetMethod("SetVariable", new[] { typeof(string), typeof(object) });
+                                    setVar?.Invoke(scope, new object[] { "__revit__", app });
+                                    setVar?.Invoke(scope, new object[] { "__uiapp__", app });
+                                    setVar?.Invoke(scope, new object[] { "__doc__", app.ActiveUIDocument?.Document });
+                                    setVar?.Invoke(scope, new object[] { "__uidoc__", app.ActiveUIDocument });
+                                    setVar?.Invoke(scope, new object[] { "__file__", scriptPath });
+                                    setVar?.Invoke(scope, new object[] { "__commandpath__", scriptPath });
+
+                                    MethodInfo getSys = engType.GetMethod("GetSysModule", Type.EmptyTypes);
+                                    object sys = getSys?.Invoke(engine, null);
+                                    if (sys != null)
+                                    {
+                                        PropertyInfo pathProp = sys.GetType().GetProperty("path");
+                                        object pathObj = pathProp?.GetValue(sys);
+                                        MethodInfo appendMethod = pathObj?.GetType().GetMethod("append", new[] { typeof(object) });
+                                        if (appendMethod != null && pathObj != null)
+                                        {
+                                            foreach (var sp in sysPaths) appendMethod.Invoke(pathObj, new object[] { sp });
+                                        }
+                                    }
+
+                                    MethodInfo execFile = engType.GetMethod("ExecuteFile", new[] { typeof(string), scope.GetType() }) ??
+                                                          engType.GetMethods().FirstOrDefault(m => m.Name == "ExecuteFile" && m.GetParameters().Length == 2);
+                                    if (execFile != null)
+                                    {
+                                        execFile.Invoke(engine, new object[] { scriptPath, scope });
+                                        return RunResult.Success("Executed " + title);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Log.Write("TryExecutePyRevitScript exception: " + ex);
+                Exception inner = ex.InnerException ?? ex;
+                Log.Write("TryExecutePyRevitScript error: " + inner);
+                return RunResult.Fail("Error executing Python script " + title + ": " + inner.Message);
             }
+
             return null;
         }
 
@@ -770,8 +1037,8 @@ namespace BIMCommandCenter.Core.Revit
                         ["dynShowUI"] = headless ? "false" : "true",
                         ["dynAutomation"] = headless ? "true" : "false",
                         ["dynPathExecute"] = headless ? "true" : "false",
-                        ["dynModelShutDown"] = headless ? "true" : "false",
-                        ["dynForceManualRun"] = headless ? "false" : "true"
+                        ["dynModelShutDown"] = "false",
+                        ["dynForceManualRun"] = "true"
                     };
 
                     object data = Activator.CreateInstance(dataType);
@@ -782,12 +1049,21 @@ namespace BIMCommandCenter.Core.Revit
                     MethodInfo execute = dynType.GetMethod("ExecuteCommand", new[] { dataType });
                     if (execute != null)
                     {
-                        object result = execute.Invoke(dynamo, new[] { data });
-                        bool ok = result is Result r ? r == Result.Succeeded : true;
+                        try
+                        {
+                            object result = execute.Invoke(dynamo, new[] { data });
+                            bool ok = result is Result r ? r == Result.Succeeded : true;
 
-                        string name = Path.GetFileNameWithoutExtension(dynPath);
-                        if (!ok) return RunResult.Fail("Dynamo reported a failure running " + name + ".");
-                        return RunResult.Success(headless ? name + " ran successfully." : name + " opened in Dynamo — verify parameters and click Run.");
+                            string name = Path.GetFileNameWithoutExtension(dynPath);
+                            if (!ok) return RunResult.Fail("Dynamo reported a failure running " + name + ".");
+                            return RunResult.Success(headless ? name + " ran successfully." : name + " opened in Dynamo — verify parameters and click Run.");
+                        }
+                        catch (Exception ex)
+                        {
+                            Exception inner = ex.InnerException ?? ex;
+                            Log.Write("Dynamo ExecuteCommand exception: " + inner);
+                            return RunResult.Fail("Dynamo execution error: " + inner.Message);
+                        }
                     }
                 }
             }
