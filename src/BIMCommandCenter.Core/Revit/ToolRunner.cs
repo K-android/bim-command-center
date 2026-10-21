@@ -153,13 +153,27 @@ namespace BIMCommandCenter.Core.Revit
         {
             if (string.IsNullOrWhiteSpace(target)) return target;
             target = Environment.ExpandEnvironmentVariables(target.Trim());
-            if (Path.IsPathRooted(target) && File.Exists(target)) return target;
+            if (Path.IsPathRooted(target))
+            {
+                if (File.Exists(target)) return target;
+                if (Directory.Exists(target))
+                {
+                    string innerScript = Path.Combine(target, "script.py");
+                    if (File.Exists(innerScript)) return innerScript;
+                    return target;
+                }
+            }
 
             // 1. Check central scripts root if set
             if (!string.IsNullOrWhiteSpace(_config.ScriptsRoot))
             {
                 string inScripts = Path.Combine(_config.ScriptsRoot, target.TrimStart('\\', '/'));
                 if (File.Exists(inScripts)) return inScripts;
+                if (Directory.Exists(inScripts))
+                {
+                    string innerScript = Path.Combine(inScripts, "script.py");
+                    if (File.Exists(innerScript)) return innerScript;
+                }
 
                 // Also check categorized subfolders if target is a simple filename or relative path
                 string fileName = Path.GetFileName(target);
@@ -168,12 +182,22 @@ namespace BIMCommandCenter.Core.Revit
                 {
                     string inSub = Path.Combine(_config.ScriptsRoot, sub, fileName);
                     if (File.Exists(inSub)) return inSub;
+                    if (Directory.Exists(inSub))
+                    {
+                        string innerScript = Path.Combine(inSub, "script.py");
+                        if (File.Exists(innerScript)) return innerScript;
+                    }
                 }
             }
 
             // 2. Check bundled core folder
             string inCore = Path.Combine(AppConfig.CoreDir, target.TrimStart('\\', '/'));
             if (File.Exists(inCore)) return inCore;
+            if (Directory.Exists(inCore))
+            {
+                string innerScript = Path.Combine(inCore, "script.py");
+                if (File.Exists(innerScript)) return innerScript;
+            }
 
             return Path.IsPathRooted(target) ? target : inCore;
         }
@@ -311,6 +335,18 @@ namespace BIMCommandCenter.Core.Revit
         {
             string resolved = ResolvePath(target);
 
+            // If target or resolved is a directory, look for script.py inside
+            if (!string.IsNullOrEmpty(resolved) && Directory.Exists(resolved))
+            {
+                string scriptInDir = Path.Combine(resolved, "script.py");
+                if (File.Exists(scriptInDir)) resolved = scriptInDir;
+            }
+            else if (!string.IsNullOrEmpty(target) && Directory.Exists(target))
+            {
+                string scriptInDir = Path.Combine(target, "script.py");
+                if (File.Exists(scriptInDir)) resolved = scriptInDir;
+            }
+
             // 1. If target is already a registered Ribbon Command ID:
             RevitCommandId id = RevitCommandId.LookupCommandId(target);
             if (id != null && app.CanPostCommand(id))
@@ -364,7 +400,7 @@ namespace BIMCommandCenter.Core.Revit
 
             // 4. Standalone & Central Execution: Run via embedded PythonRunner!
             // Zero-install for team members — pyRevit does NOT need to be installed on every machine!
-            if (!string.IsNullOrEmpty(resolved) && resolved.EndsWith(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(resolved))
+            if (!string.IsNullOrEmpty(resolved) && (resolved.EndsWith(".py", StringComparison.OrdinalIgnoreCase) || File.Exists(resolved)))
             {
                 return PythonRunner.Run(app, resolved, title);
             }
