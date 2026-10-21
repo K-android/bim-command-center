@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
@@ -48,6 +48,17 @@ namespace BIMCommandCenter.Core
 
             application.RegisterDockablePane(PaneId, "BIM Command Center", new CommandCenterPane(Services));
             CreateRibbon(application);
+
+            // Start Live Multi-LAN Coordination & Clash Radar
+            try
+            {
+                RevitLiveRadarService.Initialize(application, config);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("[RevitLiveRadar] Init error: " + ex.Message);
+            }
+
             Log.Write($"Core started in Revit {year}. Config: {config.LoadedFrom}. Catalog: {config.CatalogSource}. Governance: {governance.LoadedPath ?? "none"}");
             return Result.Succeeded;
         }

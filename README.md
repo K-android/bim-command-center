@@ -38,6 +38,13 @@ Enterprise-grade, scalable universal tool dispatcher and computational catalog f
    - Core updates deploy seamlessly without requiring Revit restarts or admin privileges.
 9. **Zero-Privilege Single-File Installer:**
    - `dist/BIMCommandCenter_Setup_v1.0.0.exe` (~5.9 MB) installs for any user without IT administrator rights.
+10. **Live Multi-LAN Coordination & Clash Radar (`RevitLiveRadarService`):**
+    - **Zero UI Thread Lag:** Asynchronous, non-blocking telemetry engine hooked to `DocumentChanged`, `DocumentSynchronizingWithCentral`, `DocumentSynchronizedWithCentral`, `ViewActivated`, and a throttled 3-second `Idling` loop.
+    - **Hybrid Canonical Model ID:** Automatically normalizes central model identities across Autodesk Construction Cloud (`ACC:<guid>:<title>`), Local Office Server Worksharing (`LAN:<centralFileName>`), and standalone RVT models.
+    - **Millimetric 3D Bounding Boxes:** Converts Revit decimal internal feet to millimeters (`1 ft = 304.8 mm`) to track modified element bounds and active selection bounds.
+    - **Non-Blocking WPF HUD Status Toast (`RevitRadarToastWindow`):** Semi-transparent obsidian/acrylic floating pill displaying real-time Central Sync Traffic Lights (`SAFE TO SYNC` vs `HOLD SYNC`) and worksharing borrow-lock warnings without stealing keyboard focus.
+    - **Teammate Element Highlighting (`IExternalEventHandler`):** Automatically selects and focuses conflicting teammate element IDs in the active Revit viewport upon alert interaction.
+    - **Universal Multi-Targeting:** Compiles cleanly across .NET Framework 4.8 (Revit 2024), .NET 8.0 (Revit 2025/2026), and .NET 10.0 (Revit 2027).
 
 ---
 
