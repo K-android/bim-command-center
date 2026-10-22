@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Autodesk.Revit.DB;
@@ -287,6 +288,12 @@ namespace BIMCommandCenter.Core.Revit
             }
         }
 
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr hWnd);
+
         public RunResult LaunchDynamoPlayer(UIApplication app, string dynPath, Dictionary<string, object> tool = null, DynamoPackageCheckResult pkgCheck = null)
         {
             try
@@ -299,6 +306,28 @@ namespace BIMCommandCenter.Core.Revit
                 Log.Write("EnsureFolderInDynamoSettings failed: " + ex.Message);
             }
 
+            // 1. If Dynamo Player is ALREADY running and listening on localhost:
+            // Do NOT call PostCommand (which would toggle it closed!). Instead, send the graph open request directly!
+            int existingPort = DynamoPlayerHelper.FindActivePlayerServerPort();
+            if (existingPort > 0)
+            {
+                Log.Write($"Dynamo Player is already active on port {existingPort}. Sending graph open request.");
+                _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
+                return RunResult.Success($"Dynamo Player is open. Loaded \"{Path.GetFileName(dynPath)}\".");
+            }
+
+            // 2. Transfer window focus to Revit main window so Revit 2025 (.NET 8) allows command execution
+            if (app != null && app.MainWindowHandle != IntPtr.Zero)
+            {
+                try
+                {
+                    SetForegroundWindow(app.MainWindowHandle);
+                    SetFocus(app.MainWindowHandle);
+                }
+                catch { }
+            }
+
+            // 3. Try standard Revit command IDs
             string[] candidateIds = new[]
             {
                 "ID_PLAYLIST_DYNAMO",
@@ -328,7 +357,26 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            return RunResult.Fail("Dynamo Player command ('ID_PLAYLIST_DYNAMO') is busy or another transaction is active in Revit.");
+            // 4. Fallback: ComponentManager direct ribbon execution (bypasses CanPostCommand WebView2 focus restrictions)
+            if (DynamoPlayerHelper.TryInvokeRibbonDynamoPlayer())
+            {
+                _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
+                return RunResult.Success($"Opened Dynamo Player for \"{Path.GetFileName(dynPath)}\".");
+            }
+
+            // 5. Fallback: Dynamo canvas itself if player command is unavailable
+            var canvasCmd = RevitCommandId.LookupCommandId("ID_VISUAL_PROGRAMMING_DYNAMO");
+            if (canvasCmd != null && app.CanPostCommand(canvasCmd))
+            {
+                try
+                {
+                    app.PostCommand(canvasCmd);
+                    return RunResult.Success($"Dynamo Player was busy; opened Dynamo canvas for \"{Path.GetFileName(dynPath)}\".");
+                }
+                catch { }
+            }
+
+            return RunResult.Fail("Dynamo Player command ('ID_PLAYLIST_DYNAMO') is busy or another transaction is active in Revit. Try clicking inside Revit view to restore focus.");
         }
 
         private RunResult RunPyRevit(UIApplication app, string target, string title, Dictionary<string, object> tool)

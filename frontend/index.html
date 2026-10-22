@@ -2027,10 +2027,11 @@ function openPreflightModal(toolId) {
                   <input type="number" id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" min="${minVal}" max="${maxVal}" step="${stepVal}" value="${esc(val || minVal)}" class="dynamo-script-param w-16 text-center text-xs p-1 bg-slate-50 border border-slate-200 rounded font-mono font-semibold text-slate-800" oninput="document.getElementById('dyn_range_${esc(inputId)}').value = this.value">
                 </div>
               `;
-            } else if (options && options.length > 0) {
+            } else if (type === 'dropdown' || (options && options.length > 0)) {
+              const opts = (options && options.length > 0) ? options : (val ? [val] : ['Default']);
               formHtml += `
                 <select id="dyn_inp_${esc(inputId)}" data-dyn-id="${esc(inputId)}" class="dynamo-script-param w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded focus:bg-white focus:ring-1 focus:ring-blue-500 font-medium text-slate-700">
-                  ${options.map(opt => `<option value="${esc(opt)}" ${String(opt) === String(val) ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+                  ${opts.map(opt => `<option value="${esc(opt)}" ${String(opt) === String(val) ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
                 </select>
               `;
             } else if (type === 'boolean' || type === 'bool') {
@@ -2067,12 +2068,12 @@ function openPreflightModal(toolId) {
           ioBox.innerHTML = formHtml;
 
           if (btn) {
-            if (hasSelection && (!revitSel || revitSel.count === 0)) {
-              btn.innerHTML = '<i data-lucide="play-circle" class="w-3.5 h-3.5"></i>Launch in Dynamo Player';
-            } else if (hasSelection && revitSel && revitSel.count > 0) {
+            if (hasSelection && revitSel && revitSel.count > 0) {
               btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Selection';
-            } else {
+            } else if (inputs.length > 0) {
               btn.innerHTML = '<i data-lucide="play" class="w-3.5 h-3.5"></i>Run with Inputs';
+            } else {
+              btn.innerHTML = '<i data-lucide="zap" class="w-3.5 h-3.5"></i>Run in Revit';
             }
           }
         }
@@ -2164,9 +2165,7 @@ function executeFromPreflight() {
   if (tool.actionType === 'Dynamo') {
     const selInput = document.querySelector('input.dynamo-script-param[data-is-selection="true"]');
     if (selInput && !selInput.value) {
-      // Prompt user or launch in Dynamo Player directly
-      launchNativeDynamoPlayer(tool.toolId, tool.targetPath);
-      return;
+      toast('Note: 0 elements selected in Revit. Execution proceeding with defaults/active view.');
     }
   }
 
