@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -279,6 +279,7 @@ namespace BIMCommandCenter.Core.UI
                     {
                         ["path"] = resolved,
                         ["hasSelectionInputs"] = details.HasSelectionInputs,
+                        ["hasDataShapesForm"] = details.HasDataShapesForm,
                         ["inputs"] = details.Inputs.Select(i => new Dictionary<string, object>
                         {
                             ["id"] = i.Id,

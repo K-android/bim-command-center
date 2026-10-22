@@ -231,8 +231,9 @@ namespace BIMCommandCenter.Core.Revit
                 return LaunchDynamoPlayer(app, dynPath, tool, pkgCheck);
             }
 
-            // Step 1 & Step 3: Direct Headless Execution with Parameter Injection!
-            // No Dynamo Player sample folder confusion. Clean, silent execution directly in Revit.
+            // Step 1 & Step 3: Direct Execution with Parameter Injection!
+            // Supports both headless injection and native Data-Shapes dialog popup!
+            bool runNativeUi = userInputs != null && userInputs.ContainsKey("__run_native_ui__");
             string pathToExecute = dynPath;
             bool isTemp = false;
 
@@ -248,8 +249,8 @@ namespace BIMCommandCenter.Core.Revit
 
             try
             {
-                Log.Write($"Running Dynamo script '{scriptName}' headlessly via DynamoRevit journal automation.");
-                var runRes = DynamoRunner.Run(app, pathToExecute, headless: true);
+                Log.Write($"Running Dynamo script '{scriptName}' (runNativeUi={runNativeUi}) via DynamoRevit journal automation.");
+                var runRes = DynamoRunner.Run(app, pathToExecute, headless: !runNativeUi, enableNativeUi: runNativeUi);
                 if (pkgCheck != null && pkgCheck.HasMissing && runRes != null)
                 {
                     runRes.Warnings.Add("Note: Missing Dynamo package(s): " + string.Join(", ", pkgCheck.Missing) + ". Install via Revit Manage > Dynamo > Packages.");
@@ -896,7 +897,7 @@ namespace BIMCommandCenter.Core.Revit
     /// </summary>
     internal static class DynamoRunner
     {
-        public static RunResult Run(UIApplication app, string dynPath, bool headless)
+        public static RunResult Run(UIApplication app, string dynPath, bool headless, bool enableNativeUi = false)
         {
             Assembly dynamoRevit = AppDomain.CurrentDomain.GetAssemblies()
                 .FirstOrDefault(a => a.GetName().Name == "DynamoRevitDS" || a.GetName().Name == "DynamoRevit");
@@ -935,9 +936,9 @@ namespace BIMCommandCenter.Core.Revit
                     var journal = new Dictionary<string, string>
                     {
                         ["dynPath"] = dynPath,
-                        ["dynShowUI"] = headless ? "false" : "true",
-                        ["dynAutomation"] = headless ? "true" : "false",
-                        ["dynPathExecute"] = headless ? "true" : "false",
+                        ["dynShowUI"] = "false",
+                        ["dynAutomation"] = enableNativeUi ? "false" : (headless ? "true" : "false"),
+                        ["dynPathExecute"] = "true",
                         ["dynModelShutDown"] = "false",
                         ["dynForceManualRun"] = "true"
                     };
@@ -957,7 +958,7 @@ namespace BIMCommandCenter.Core.Revit
 
                             string name = Path.GetFileNameWithoutExtension(dynPath);
                             if (!ok) return RunResult.Fail("Dynamo reported a failure running " + name + ".");
-                            return RunResult.Success(headless ? name + " ran successfully." : name + " opened in Dynamo — verify parameters and click Run.");
+                            return RunResult.Success(enableNativeUi ? name + " executed with Data-Shapes form." : (headless ? name + " ran successfully." : name + " opened in Dynamo — verify parameters and click Run."));
                         }
                         catch (Exception ex)
                         {
