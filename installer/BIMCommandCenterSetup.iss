@@ -57,6 +57,12 @@ Name: "{userappdata}\BIMCommandCenter\scripts\Dynamo"
 Name: "{userappdata}\BIMCommandCenter\scripts\PyRevit"
 Name: "{userappdata}\BIMCommandCenter\scripts\Custom Addins"
 Name: "{userappdata}\BIMCommandCenter\scripts\Grasshopper"
+Name: "{userappdata}\BIMCommandCenter\scripts\families"
+Name: "{userappdata}\BIMCommandCenter\scripts\families\Architectural"
+Name: "{userappdata}\BIMCommandCenter\scripts\families\Structural"
+Name: "{userappdata}\BIMCommandCenter\scripts\families\MEP"
+Name: "{userappdata}\BIMCommandCenter\scripts\families\Annotation & Details"
+Name: "{userappdata}\BIMCommandCenter\scripts\families\Blocks"
 
 [Code]
 // Helper function to write Revit .addin manifest file

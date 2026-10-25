@@ -74,13 +74,14 @@
   <!-- NAVIGATION TABS -->
   <nav class="bg-white border-b border-slate-200 px-2 flex items-center gap-1 shrink-0">
     <button id="tab-tools" onclick="switchTab('tools')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-blue-600 text-blue-700">Tools</button>
+    <button id="tab-families" onclick="switchTab('families')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5">
+      <i data-lucide="box" class="w-3.5 h-3.5"></i>
+      <span>Families & Blocks</span>
+      <span id="families-count" class="hidden text-[9px] bg-indigo-100 text-indigo-700 px-1 rounded-full font-mono">0</span>
+    </button>
     <button id="tab-ai" onclick="switchTab('ai')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1">
       <span>Copilot</span>
       <span class="text-[9px] bg-blue-100 text-blue-700 px-1 rounded font-medium">Librarian</span>
-    </button>
-    <button id="tab-activity" onclick="switchTab('activity')" class="tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1">
-      Activity
-      <span id="activity-count" class="hidden text-[9px] bg-slate-100 text-slate-600 px-1 rounded-full font-mono">0</span>
     </button>
   </nav>
 
@@ -235,79 +236,41 @@
     </div>
   </main>
 
-  <!-- VIEW 3: ACTIVITY & AUDIT TRAIL (Blueprint Page 5 & 7) -->
-  <main id="view-activity" class="hidden flex-1 overflow-y-auto scroll p-4 bg-slate-50 space-y-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <h2 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-          <i data-lucide="file-check-2" class="w-4 h-4 text-blue-600"></i>Activity & Execution Audit Trail
-        </h2>
-        <p class="text-[11px] text-slate-500">Record of tool runs, modified elements, execution duration, and reported issues.</p>
-      </div>
+  <!-- VIEW 2: FAMILIES & BLOCKS CATALOG -->
+  <main id="view-families" class="hidden flex-1 overflow-y-auto scroll flex flex-col bg-slate-50">
+    <!-- FAMILIES SEARCH & ACTION HEADER -->
+    <section class="bg-white border-b border-slate-200 px-3 py-2.5 shrink-0 space-y-2">
       <div class="flex items-center gap-1.5">
-        <button onclick="loadActivity()" class="text-xs bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 px-2 py-1 rounded-md flex items-center gap-1 shadow-2xs">
-          <i data-lucide="refresh-cw" class="w-3 h-3"></i>Refresh
-        </button>
-        <button onclick="openSubmitModal()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 shadow-2xs">
-          <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>Submit Automation
-        </button>
-      </div>
-    </div>
-
-    <!-- STATS SUMMARY -->
-    <div class="grid grid-cols-4 gap-2">
-      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
-        <div class="text-[10px] text-slate-400 uppercase font-bold">Total Runs</div>
-        <div id="stat-total" class="text-lg font-bold text-slate-800 mt-0.5">0</div>
-      </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
-        <div class="text-[10px] text-slate-400 uppercase font-bold">Success</div>
-        <div id="stat-success" class="text-lg font-bold text-emerald-600 mt-0.5">0</div>
-      </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
-        <div class="text-[10px] text-slate-400 uppercase font-bold">Warnings</div>
-        <div id="stat-warnings" class="text-lg font-bold text-amber-600 mt-0.5">0</div>
-      </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-2.5 text-center">
-        <div class="text-[10px] text-slate-400 uppercase font-bold">Avg Time</div>
-        <div id="stat-time" class="text-lg font-bold text-slate-700 mt-0.5">0s</div>
-      </div>
-    </div>
-
-    <!-- ENTERPRISE SCRIPT USAGE LEADERBOARD & KNOWLEDGE GRAPH (NEW) -->
-    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-      <div class="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-semibold">
-        <div class="flex items-center gap-2">
-          <i data-lucide="bar-chart-2" class="w-4 h-4 text-purple-600"></i>
-          <span>Firm-Wide Script Usage Leaderboard</span>
-          <span id="firm-telemetry-badge" class="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono">Telemetry: Local</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="exportKnowledgeGraphJson()" class="text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-1 rounded-md flex items-center gap-1 transition" title="Export 3D Knowledge Graph payload for backend analysis / training">
-            <i data-lucide="network" class="w-3.5 h-3.5"></i>
-            <span>Export 3D Graph</span>
+        <div class="relative flex-1">
+          <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400"></i>
+          <input id="search-families" type="text" oninput="onSearchFamiliesInput()" placeholder="Search families, categories, blocks…"
+                 class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-8 pr-7 py-1.5 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+          <button id="search-families-clear" onclick="clearFamiliesSearch()" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-slate-700">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
           </button>
         </div>
-      </div>
-      <div id="firm-leaderboard-container" class="p-3 text-xs">
-        <div class="text-slate-400 text-center py-2">Loading firm-wide script usage...</div>
-      </div>
-    </div>
-
-    <!-- RECENT RUNS LIST -->
-    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-      <div class="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-semibold">
-        <div class="flex items-center gap-2">
-          <span>Execution History</span>
-          <span class="text-[11px] text-slate-400 font-normal">Audit entries recorded</span>
-        </div>
-        <button onclick="exportActivityCsv()" class="text-[11px] font-semibold text-slate-700 hover:text-blue-700 bg-white border border-slate-200 hover:bg-slate-100 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-2xs transition" title="Export audit trail to CSV file">
-          <i data-lucide="download" class="w-3.5 h-3.5 text-slate-500"></i>
-          <span>Export CSV</span>
+        <button onclick="loadFamilies(true)" title="Refresh families & blocks catalog" class="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="openFamiliesFolder()" title="Open Central Families Folder in Explorer" class="p-1.5 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition flex items-center gap-1">
+          <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
+          <span class="text-[11px] font-semibold hidden sm:inline">Add Families</span>
         </button>
       </div>
-      <div id="activity-list" class="divide-y divide-slate-100"></div>
-    </div>
+
+      <!-- CATEGORY & FORMAT PILLS BAR -->
+      <div class="flex items-center gap-1.5 overflow-x-auto scroll py-0.5 text-[11px]" id="families-category-bar">
+        <button onclick="filterFamilyCategory('All')" id="fam-cat-All" class="fam-cat-btn px-2.5 py-1 rounded-md font-semibold bg-indigo-600 text-white shrink-0">All</button>
+      </div>
+    </section>
+
+    <!-- FAMILIES LIST / CARDS CONTAINER -->
+    <section id="families-list-view" class="p-3 space-y-2.5 flex-1 overflow-y-auto scroll">
+      <div class="py-12 text-center text-slate-400 text-xs">
+        <i data-lucide="loader-2" class="w-6 h-6 mx-auto text-indigo-500 animate-spin"></i>
+        <p class="mt-2 font-semibold text-slate-600">Loading families…</p>
+      </div>
+    </section>
   </main>
 
   <!-- ====================================================================== -->
@@ -2537,7 +2500,207 @@ function openDocLink(url) {
 }
 
 // ======================================================================
-//  Activity & Audit Trail Tab (Blueprint Page 5 & 7)
+//  Families & Blocks Catalog Tab
+// ======================================================================
+let allFamilies = [];
+let selectedFamilyCategory = 'All';
+let searchFamiliesText = '';
+
+async function loadFamilies(force = false) {
+  const container = document.getElementById('families-list-view');
+  if (!container) return;
+
+  if (allFamilies.length === 0 || force) {
+    container.innerHTML = `
+      <div class="py-12 text-center text-slate-400 text-xs">
+        <i data-lucide="loader-2" class="w-6 h-6 mx-auto text-indigo-500 animate-spin"></i>
+        <p class="mt-2 font-semibold text-slate-600">Scanning central families & blocks library…</p>
+      </div>`;
+    icons();
+  }
+
+  try {
+    const res = await Bridge.call('getFamiliesCatalog', { refresh: force });
+    allFamilies = (res && res.families) ? res.families : [];
+    const countBadge = document.getElementById('families-count');
+    if (countBadge) {
+      countBadge.textContent = allFamilies.length;
+      countBadge.classList.toggle('hidden', allFamilies.length === 0);
+    }
+
+    renderFamilyCategories(res.categories || []);
+    renderFamilies();
+  } catch (err) {
+    container.innerHTML = `
+      <div class="p-6 text-center text-slate-400 text-xs">
+        <i data-lucide="alert-circle" class="w-6 h-6 mx-auto text-rose-500"></i>
+        <p class="mt-2 font-semibold text-slate-700">Unable to load families</p>
+        <p class="text-[11px] text-slate-500">${esc(err.message)}</p>
+        <button onclick="loadFamilies(true)" class="mt-3 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold">Retry</button>
+      </div>`;
+    icons();
+  }
+}
+
+function renderFamilyCategories(categories) {
+  const bar = document.getElementById('families-category-bar');
+  if (!bar) return;
+
+  const cats = ['All', ...categories.filter(c => c !== 'All')];
+  bar.innerHTML = cats.map(cat => `
+    <button onclick="filterFamilyCategory('${esc(cat)}')" id="fam-cat-${esc(cat)}"
+            class="fam-cat-btn px-2.5 py-1 rounded-md font-semibold transition shrink-0 ${selectedFamilyCategory === cat ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+      ${esc(cat)}
+    </button>
+  `).join('');
+}
+
+function filterFamilyCategory(cat) {
+  selectedFamilyCategory = cat;
+  document.querySelectorAll('.fam-cat-btn').forEach(btn => {
+    btn.className = 'fam-cat-btn px-2.5 py-1 rounded-md font-semibold transition shrink-0 bg-slate-100 text-slate-600 hover:bg-slate-200';
+  });
+  const activeBtn = document.getElementById(`fam-cat-${cat}`);
+  if (activeBtn) activeBtn.className = 'fam-cat-btn px-2.5 py-1 rounded-md font-semibold transition shrink-0 bg-indigo-600 text-white';
+  renderFamilies();
+}
+
+function onSearchFamiliesInput() {
+  const input = document.getElementById('search-families');
+  searchFamiliesText = input ? input.value.trim().toLowerCase() : '';
+  const clearBtn = document.getElementById('search-families-clear');
+  if (clearBtn) clearBtn.classList.toggle('hidden', searchFamiliesText.length === 0);
+  renderFamilies();
+}
+
+function clearFamiliesSearch() {
+  const input = document.getElementById('search-families');
+  if (input) input.value = '';
+  searchFamiliesText = '';
+  const clearBtn = document.getElementById('search-families-clear');
+  if (clearBtn) clearBtn.classList.add('hidden');
+  renderFamilies();
+}
+
+function renderFamilies() {
+  const container = document.getElementById('families-list-view');
+  if (!container) return;
+
+  let filtered = allFamilies;
+
+  if (selectedFamilyCategory !== 'All') {
+    filtered = filtered.filter(f => f.category === selectedFamilyCategory);
+  }
+
+  if (searchFamiliesText) {
+    filtered = filtered.filter(f => 
+      (f.name && f.name.toLowerCase().includes(searchFamiliesText)) ||
+      (f.category && f.category.toLowerCase().includes(searchFamiliesText)) ||
+      (f.format && f.format.toLowerCase().includes(searchFamiliesText))
+    );
+  }
+
+  if (filtered.length === 0) {
+    if (allFamilies.length === 0) {
+      container.innerHTML = `
+        <div class="p-6 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-3 mt-4">
+          <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+            <i data-lucide="box" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-800 text-sm">Central Families Library is Ready</h3>
+            <p class="text-xs text-slate-500 max-w-xs mx-auto mt-1">
+              Add company standard Revit families (.rfa) or CAD/Rhino blocks into the central folder to make them accessible to your whole team.
+            </p>
+          </div>
+          <button onclick="openFamiliesFolder()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition">
+            <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+            <span>Open Families Folder</span>
+          </button>
+        </div>`;
+    } else {
+      container.innerHTML = `
+        <div class="p-8 text-center text-slate-400 text-xs">
+          <i data-lucide="search-x" class="w-6 h-6 mx-auto text-slate-300"></i>
+          <p class="mt-2 font-semibold text-slate-600">No components match your search</p>
+          <button onclick="clearFamiliesSearch(); filterFamilyCategory('All')" class="mt-2 text-indigo-600 hover:underline">Clear search &amp; filters</button>
+        </div>`;
+    }
+    icons();
+    return;
+  }
+
+  container.innerHTML = filtered.map(fam => `
+    <div class="bg-white border border-slate-200/90 rounded-lg p-2.5 hover:border-indigo-300 hover:shadow-xs transition">
+      <div class="flex gap-2.5">
+        <div class="w-16 h-16 rounded-md bg-slate-100 border border-slate-200/80 overflow-hidden shrink-0 flex items-center justify-center relative">
+          ${fam.thumbnail ? `<img src="${fam.thumbnail}" alt="${esc(fam.name)}" class="w-full h-full object-contain p-0.5" />` : `
+            <div class="flex flex-col items-center justify-center text-indigo-400">
+              <i data-lucide="box" class="w-6 h-6 stroke-[1.75]"></i>
+              <span class="text-[8.5px] font-bold uppercase tracking-tight mt-0.5 text-indigo-500 font-mono">${esc(fam.format)}</span>
+            </div>
+          `}
+          <span class="absolute top-1 right-1 px-1 py-0.2 rounded text-[8.5px] font-bold font-mono bg-slate-900/80 text-white">${esc(fam.format)}</span>
+        </div>
+
+        <div class="min-w-0 flex-1 flex flex-col justify-between">
+          <div>
+            <div class="flex items-start justify-between gap-1">
+              <h3 class="font-bold text-slate-800 text-xs leading-tight truncate" title="${esc(fam.name)}">${esc(fam.name)}</h3>
+              <span class="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
+                ${esc(fam.category)}
+              </span>
+            </div>
+            <div class="text-[10.5px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+              <span>${esc(fam.fileSize)}</span>
+              <span>•</span>
+              <span>${esc(fam.lastModified)}</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-slate-100">
+            <button type="button" onclick="loadFamilyToProject('${esc(fam.fullPath).replace(/\\/g, '\\\\')}', false)" class="flex-1 py-1 px-2 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] flex items-center justify-center gap-1 transition">
+              <i data-lucide="download" class="w-3 h-3 text-slate-500"></i>
+              <span>Load</span>
+            </button>
+            <button type="button" onclick="loadFamilyToProject('${esc(fam.fullPath).replace(/\\/g, '\\\\')}', true)" class="flex-1 py-1 px-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px] flex items-center justify-center gap-1 shadow-2xs transition">
+              <i data-lucide="mouse-pointer-click" class="w-3 h-3 text-indigo-200"></i>
+              <span>Load &amp; Place</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  icons();
+}
+
+async function loadFamilyToProject(filePath, placeAfterLoad) {
+  toast(placeAfterLoad ? 'Loading family & preparing placement…' : 'Loading family into Revit project…');
+  try {
+    const res = await Bridge.call('loadFamily', { path: filePath, place: placeAfterLoad });
+    if (res && res.success) {
+      toast(res.message || 'Family loaded successfully!');
+    } else {
+      toast(res && res.message ? res.message : 'Failed to load family', true);
+    }
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+}
+
+async function openFamiliesFolder() {
+  try {
+    await Bridge.call('openFamiliesFolder');
+    toast('Opened Central Families folder');
+  } catch (err) {
+    toast('Could not open folder: ' + err.message, true);
+  }
+}
+
+// ======================================================================
+//  Activity & Audit Trail Tab (Preserved for background telemetry)
 // ======================================================================
 async function loadActivity() {
   let runs = [];
@@ -3440,17 +3603,19 @@ async function saveSettings() {
 // ======================================================================
 function switchTab(tab) {
   document.getElementById('view-tools').classList.toggle('hidden', tab !== 'tools');
+  const famView = document.getElementById('view-families');
+  if (famView) famView.classList.toggle('hidden', tab !== 'families');
   document.getElementById('view-ai').classList.toggle('hidden', tab !== 'ai');
-  document.getElementById('view-activity').classList.toggle('hidden', tab !== 'activity');
 
   const tabs = [
     ['tab-tools', tab === 'tools'],
-    ['tab-ai', tab === 'ai'],
-    ['tab-activity', tab === 'activity']
+    ['tab-families', tab === 'families'],
+    ['tab-ai', tab === 'ai']
   ];
 
   tabs.forEach(([id, on]) => {
     const el = document.getElementById(id);
+    if (!el) return;
     el.classList.toggle('border-blue-600', on);
     el.classList.toggle('text-blue-700', on);
     el.classList.toggle('border-transparent', !on);
@@ -3459,8 +3624,8 @@ function switchTab(tab) {
 
   if (tab === 'ai') {
     setTimeout(() => document.getElementById('chat-input').focus(), 50);
-  } else if (tab === 'activity') {
-    loadActivity();
+  } else if (tab === 'families') {
+    loadFamilies();
   }
 }
 
@@ -3827,9 +3992,9 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === '1') {
     switchTab('tools');
   } else if (e.key === '2') {
-    switchTab('ai');
+    switchTab('families');
   } else if (e.key === '3') {
-    switchTab('activity');
+    switchTab('ai');
   } else if (e.key === 'Escape') {
     closeAllModals();
   }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -14,6 +14,7 @@ namespace BIMCommandCenter.Core.Infrastructure
         public string CatalogSource { get; private set; }
         public string CatalogSheet { get; private set; }
         public string ScriptsRoot { get; private set; }
+        public string FamiliesRoot { get; private set; }
         public string TelemetryFolder { get; private set; }
         public string KnowledgeGraphPath { get; private set; }
         public string IdeasEndpoint { get; private set; }
@@ -58,6 +59,10 @@ namespace BIMCommandCenter.Core.Infrastructure
             string defaultScripts = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BIMCommandCenter", "scripts");
             string scriptsRoot = !string.IsNullOrWhiteSpace(configuredScripts) ? Expand(configuredScripts) : defaultScripts;
 
+            string configuredFamilies = d.Str("familiesRoot", "");
+            string defaultFamilies = Path.Combine(scriptsRoot, "families");
+            string familiesRoot = !string.IsNullOrWhiteSpace(configuredFamilies) ? Expand(configuredFamilies) : defaultFamilies;
+
             try
             {
                 Directory.CreateDirectory(scriptsRoot);
@@ -65,6 +70,13 @@ namespace BIMCommandCenter.Core.Infrastructure
                 Directory.CreateDirectory(Path.Combine(scriptsRoot, "PyRevit"));
                 Directory.CreateDirectory(Path.Combine(scriptsRoot, "Custom Addins"));
                 Directory.CreateDirectory(Path.Combine(scriptsRoot, "Grasshopper"));
+
+                Directory.CreateDirectory(familiesRoot);
+                Directory.CreateDirectory(Path.Combine(familiesRoot, "Architectural"));
+                Directory.CreateDirectory(Path.Combine(familiesRoot, "Structural"));
+                Directory.CreateDirectory(Path.Combine(familiesRoot, "MEP"));
+                Directory.CreateDirectory(Path.Combine(familiesRoot, "Annotation & Details"));
+                Directory.CreateDirectory(Path.Combine(familiesRoot, "Blocks"));
             }
             catch { }
 
@@ -73,6 +85,7 @@ namespace BIMCommandCenter.Core.Infrastructure
                 CatalogSource = Expand(d.Str("catalogSource", "data/sample_catalog.json")),
                 CatalogSheet = d.Str("catalogSheet", ""),
                 ScriptsRoot = scriptsRoot,
+                FamiliesRoot = familiesRoot,
                 TelemetryFolder = Expand(d.Str("telemetryFolder", "")),
                 KnowledgeGraphPath = Expand(d.Str("knowledgeGraphPath", "")),
                 IdeasEndpoint = d.Str("ideasEndpoint", ""),

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,11 +14,35 @@ namespace BIMCommandCenter.Core.UI
     public class CommandCenterPane : UserControl, IDockablePaneProvider
     {
         private const string VirtualHost = "bimcc.local";
+        private static CommandCenterPane _instance;
+        private static string _pendingTab;
         private readonly Services _services;
         private readonly Grid _root = new Grid();
         private readonly TextBlock _status;
         private WebView2 _web;
         private bool _initStarted;
+
+        public static void NavigateToTab(string tab)
+        {
+            if (_instance != null && _instance._web != null && _instance._web.CoreWebView2 != null)
+            {
+                try
+                {
+                    _instance.Dispatcher.Invoke(() =>
+                    {
+                        _instance._web.ExecuteScriptAsync($"switchTab('{tab}')");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("NavigateToTab failed: " + ex.Message);
+                }
+            }
+            else
+            {
+                _pendingTab = tab;
+            }
+        }
 
         public CommandCenterPane(Services services)
         {
@@ -91,6 +115,16 @@ namespace BIMCommandCenter.Core.UI
                     core.SetVirtualHostNameToFolderMapping(VirtualHost, frontendDir, CoreWebView2HostResourceAccessKind.Allow);
                     url = "https://" + VirtualHost + "/index.html";
                 }
+                _instance = this;
+                core.NavigationCompleted += (s, e) =>
+                {
+                    if (!string.IsNullOrEmpty(_pendingTab))
+                    {
+                        string t = _pendingTab;
+                        _pendingTab = null;
+                        core.ExecuteScriptAsync($"switchTab('{t}')");
+                    }
+                };
                 core.Navigate(url);
                 _status.Visibility = Visibility.Collapsed;
             }

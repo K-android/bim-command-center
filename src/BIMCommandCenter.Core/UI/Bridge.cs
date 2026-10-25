@@ -384,6 +384,34 @@ namespace BIMCommandCenter.Core.UI
                     return new Dictionary<string, object> { ["path"] = path };
                 }
 
+                case "getFamiliesCatalog":
+                {
+                    bool refresh = payload.Bool("refresh");
+                    return _s.FamilyCatalog != null ? _s.FamilyCatalog.GetCatalog(refresh) : new Dictionary<string, object>();
+                }
+
+                case "loadFamily":
+                {
+                    string famPath = payload.Str("path");
+                    bool place = payload.Bool("place");
+                    Func<UIApplication, RunResult> work = (UIApplication a) => FamilyLoadRunner.Execute(a, famPath, place);
+                    RunResult res = await _s.Dispatcher.InvokeAsync(work);
+                    return new Dictionary<string, object>
+                    {
+                        ["success"] = res.Ok,
+                        ["message"] = res.Message
+                    };
+                }
+
+                case "openFamiliesFolder":
+                {
+                    string folder = _s.FamilyCatalog?.FamiliesFolder ?? Path.Combine(_s.Config.ScriptsRoot, "families");
+                    folder = Environment.ExpandEnvironmentVariables(folder);
+                    Directory.CreateDirectory(folder);
+                    Process.Start(new ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+                    return new Dictionary<string, object> { ["folder"] = folder };
+                }
+
                 case "getConfig":
                 {
                     return new Dictionary<string, object>
@@ -903,6 +931,7 @@ namespace BIMCommandCenter.Core.UI
         public RevitDispatcher Dispatcher { get; set; }
         public GovernanceService Governance { get; set; }
         public CatalogService Catalog { get; set; }
+        public FamilyCatalogService FamilyCatalog { get; set; }
         public ToolRunner Runner { get; set; }
         public IdeaService Ideas { get; set; }
         public string RevitYear { get; set; }

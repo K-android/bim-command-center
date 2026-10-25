@@ -115,6 +115,13 @@ The central scripts folder (configured in Revit via **⚙️ Settings $\rightarr
 │   ├── 📄 Facade_Panel_Optimization.gh        # Rhino.Inside.Revit Grasshopper definition
 │   └── 📄 Canopy_Generative_Form.ghx          # XML Grasshopper definition
 │
+├── 📁 families\                               # Central Revit Families (.rfa) & CAD/Rhino Blocks (.dwg, .3dm)
+│   ├── 📁 Architectural\                      # Doors, Windows, Furniture, Casework, Plumbing Fixtures
+│   ├── 📁 Structural\                         # Columns, Beams, Framing, Foundations, Trusses
+│   ├── 📁 MEP\                                # Mechanical, Electrical, Lighting, Equipment
+│   ├── 📁 Annotation & Details\               # 2D Detail Items, Title Blocks, Symbols, Tags
+│   └── 📁 Blocks\                             # Standard CAD DWG details, 3D Rhino blocks (.3dm)
+│
 ├── 📁 lib\                                    # Central shared Python/C# libraries (added to sys.path)
 │   └── 📄 company_standards.py
 │
@@ -132,6 +139,7 @@ The central scripts folder (configured in Revit via **⚙️ Settings $\rightarr
 | **pyRevit (`.pushbutton`)** | Place `DoorRenumber.pushbutton` folders in `PyRevit\`. Contains `script.py`, `bundle.yaml`, and optional `lib\`. | Clean title extracted from folder name (`Door Renumber`) or `title:` in `bundle.yaml`. Docstrings and `tooltip:` become descriptions. | **Zero-install:** runs in-process via embedded IronPython 3.4.2 with built-in shims (`pyrevit`, `DB`, `UI`). Private `lib\` added to `sys.path`. |
 | **Loose Python (`.py`)** | Place standalone `.py` scripts in `PyRevit\` or subfolders. | Parses docstrings (`"""..."""`) and `__doc__`. Helper files in `lib/` or starting with `_` are hidden. | Standalone execution with `__revit__`, `__doc__`, and stdout/stderr capture redirected to the UI. |
 | **C# Add-ins (`.dll`)** | Place single `.dll` or multi-DLL folders in `Custom Addins\`. Supports `.addin` manifests. | Assembly version info + companion `.desc.txt` or manifest `<Description>`. | **Dynamic Assembly Resolution:** Sibling DLLs and DLLs inside `lib\`, `packages\`, `deps\`, and `runtimes\` are resolved automatically without GAC or installer. |
+| **Families & Blocks (`.rfa`, `.dwg`, `.3dm`)** | Place `.rfa`, `.dwg`, or `.3dm` files in `families\` or category subfolders (e.g. `Architectural\`, `MEP\`). | Automatic high-resolution 3D thumbnail extraction via Windows Shell + subfolder category tagging. | 1-click **Load into Project** or **Load & Place Component** in active Revit view. Accessible via ribbon button "Families & Blocks" or dockable tab. |
 | **Disabling Tools** | Rename file or folder with `.disabled` (e.g., `OldScript.dyn.disabled`). | N/A | Excluded instantly from scanning; hidden across all workstations immediately upon refresh. |
 
 ---

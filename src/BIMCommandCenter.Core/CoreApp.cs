@@ -41,6 +41,7 @@ namespace BIMCommandCenter.Core
                 Dispatcher = dispatcher,
                 Governance = governance,
                 Catalog = new CatalogService(config, year, governance),
+                FamilyCatalog = new FamilyCatalogService(config),
                 Runner = new ToolRunner(config),
                 Ideas = new IdeaService(config),
                 RevitYear = year
@@ -81,6 +82,15 @@ namespace BIMCommandCenter.Core
                 AvailabilityClassName = typeof(AlwaysAvailable).FullName
             };
             panel.AddItem(button);
+
+            var familyButton = new PushButtonData("BIMCC_Families", "Families &\nBlocks", assemblyPath, typeof(ShowFamilyCatalogCommand).FullName)
+            {
+                ToolTip = "Open the Central Families & Blocks Catalog: browse approved Revit families (.rfa) and CAD/Rhino blocks, preview 3D thumbnails, and load or place components directly into your project.",
+                LargeImage = FamilyIcon(32),
+                Image = FamilyIcon(16),
+                AvailabilityClassName = typeof(AlwaysAvailable).FullName
+            };
+            panel.AddItem(familyButton);
 
             // 2. Dynamic User Custom Ribbon Panel ("My Quick Tools")
             CreateUserRibbonPanel(app, assemblyPath);
@@ -142,6 +152,71 @@ namespace BIMCommandCenter.Core
                         Brush fill = (r == 1 && c == 1) ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(251, 191, 36)) : Brushes.White;
                         dc.DrawRoundedRectangle(fill, null, new Rect(start + c * (cell + gap), start + r * (cell + gap), cell, cell), size * 0.05, size * 0.05);
                     }
+            }
+            var bmp = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(visual);
+            bmp.Freeze();
+            return bmp;
+        }
+
+        private static BitmapSource FamilyIcon(int size)
+        {
+            var visual = new DrawingVisual();
+            using (DrawingContext dc = visual.RenderOpen())
+            {
+                var bg = new SolidColorBrush(System.Windows.Media.Color.FromRgb(99, 102, 241)); // Indigo
+                dc.DrawRoundedRectangle(bg, null, new Rect(0, 0, size, size), size * 0.22, size * 0.22);
+
+                double cx = size * 0.5;
+                double cy = size * 0.52;
+                double r = size * 0.32;
+                double h = r * 0.577;
+
+                // Top Face
+                var pTopCenter = new System.Windows.Point(cx, cy - r);
+                var pTopRight = new System.Windows.Point(cx + r * 0.866, cy - h);
+                var pCenter = new System.Windows.Point(cx, cy);
+                var pTopLeft = new System.Windows.Point(cx - r * 0.866, cy - h);
+
+                var topGeom = new StreamGeometry();
+                using (var ctx = topGeom.Open())
+                {
+                    ctx.BeginFigure(pTopCenter, true, true);
+                    ctx.LineTo(pTopRight, true, false);
+                    ctx.LineTo(pCenter, true, false);
+                    ctx.LineTo(pTopLeft, true, false);
+                }
+                topGeom.Freeze();
+                dc.DrawGeometry(Brushes.White, null, topGeom);
+
+                // Left Face
+                var pBottomLeft = new System.Windows.Point(cx - r * 0.866, cy + r - h);
+                var pBottomCenter = new System.Windows.Point(cx, cy + r);
+
+                var leftGeom = new StreamGeometry();
+                using (var ctx = leftGeom.Open())
+                {
+                    ctx.BeginFigure(pCenter, true, true);
+                    ctx.LineTo(pTopLeft, true, false);
+                    ctx.LineTo(pBottomLeft, true, false);
+                    ctx.LineTo(pBottomCenter, true, false);
+                }
+                leftGeom.Freeze();
+                dc.DrawGeometry(new SolidColorBrush(System.Windows.Media.Color.FromArgb(200, 255, 255, 255)), null, leftGeom);
+
+                // Right Face
+                var pBottomRight = new System.Windows.Point(cx + r * 0.866, cy + r - h);
+
+                var rightGeom = new StreamGeometry();
+                using (var ctx = rightGeom.Open())
+                {
+                    ctx.BeginFigure(pCenter, true, true);
+                    ctx.LineTo(pTopRight, true, false);
+                    ctx.LineTo(pBottomRight, true, false);
+                    ctx.LineTo(pBottomCenter, true, false);
+                }
+                rightGeom.Freeze();
+                dc.DrawGeometry(new SolidColorBrush(System.Windows.Media.Color.FromArgb(140, 255, 255, 255)), null, rightGeom);
             }
             var bmp = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
             bmp.Render(visual);
@@ -284,7 +359,35 @@ namespace BIMCommandCenter.Core
             try
             {
                 DockablePane pane = commandData.Application.GetDockablePane(CoreApp.PaneId);
-                if (pane.IsShown()) pane.Hide(); else pane.Show();
+                if (pane.IsShown())
+                {
+                    CommandCenterPane.NavigateToTab("tools");
+                }
+                else
+                {
+                    pane.Show();
+                    CommandCenterPane.NavigateToTab("tools");
+                }
+                return Result.Succeeded;
+            }
+            catch (Exception ex)
+            {
+                message = ex.Message;
+                return Result.Failed;
+            }
+        }
+    }
+
+    [Transaction(TransactionMode.Manual)]
+    public class ShowFamilyCatalogCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            try
+            {
+                DockablePane pane = commandData.Application.GetDockablePane(CoreApp.PaneId);
+                if (!pane.IsShown()) pane.Show();
+                CommandCenterPane.NavigateToTab("families");
                 return Result.Succeeded;
             }
             catch (Exception ex)
