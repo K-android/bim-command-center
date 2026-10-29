@@ -835,19 +835,20 @@ namespace BIMCommandCenter.Core.Catalog
                             var fi = new FileInfo(file);
                             string rel = file.Substring(root.Length).TrimStart('\\', '/');
                             string[] parts = rel.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
-                            string category = parts.Length > 1 ? parts[0] : "General";
+                            string rawFolderCategory = parts.Length > 1 ? parts[0] : "";
 
                             string name = Path.GetFileNameWithoutExtension(file);
                             string format = ext.TrimStart('.').ToUpperInvariant();
 
                             string thumb = ShellThumbnailExtractor.GetThumbnailBase64(file);
-                            var meta = FamilyMetadataExtractor.Extract(file, name, category, format);
+                            var meta = FamilyMetadataExtractor.Extract(file, name, rawFolderCategory, format);
+                            string resolvedCategory = DetermineFamilyCategory(rawFolderCategory, name, format, meta);
 
                             newItems.Add(new FamilyItem
                             {
                                 Id = Math.Abs((rel + fi.Length).GetHashCode()).ToString("X8"),
                                 Name = name,
-                                Category = category,
+                                Category = resolvedCategory,
                                 RevitCategory = meta.RevitCategory,
                                 Format = format,
                                 FileVersion = meta.FileVersion,
@@ -878,6 +879,60 @@ namespace BIMCommandCenter.Core.Catalog
             _items = newItems.OrderBy(i => i.Category).ThenBy(i => i.Name).ToList();
             _lastScanTime = DateTime.UtcNow;
             Log.Write($"FamilyCatalog scanned {_items.Count} components across {roots.Count} root directories.");
+        }
+
+        private static string DetermineFamilyCategory(string rawFolderCategory, string name, string format, FamilyMetadataExtractor.ExtractedMetadata meta)
+        {
+            string folder = (rawFolderCategory ?? "").Trim();
+            string lowerFolder = folder.ToLowerInvariant();
+
+            bool isGenericOrRoot = string.IsNullOrEmpty(folder) ||
+                lowerFolder == "general" ||
+                lowerFolder == "families" ||
+                lowerFolder == "family" ||
+                lowerFolder == "rfa" ||
+                lowerFolder == "dwg" ||
+                lowerFolder == "3dm" ||
+                lowerFolder == "skp" ||
+                lowerFolder == "uncategorized" ||
+                lowerFolder == "unclassified" ||
+                lowerFolder == "default" ||
+                lowerFolder == "misc";
+
+            // If placed inside a specific user-created folder, respect that folder as the category
+            if (!isGenericOrRoot)
+            {
+                return folder;
+            }
+
+            // Auto-sort when placed outside folders (or in a generic root folder) using RevitCategory + filename + format
+            string signal = $"{meta?.RevitCategory} {name} {meta?.Description} {meta?.HostType}"
+                .Replace('_', ' ')
+                .Replace('-', ' ');
+
+            if (Regex.IsMatch(signal, @"\b(tag|tags|symbol|symbols|north|titleblock|titleblocks|callout|section|elevation|grid|level|detail|details|annotation|annotations|breakline|keynote|legend|text|dimensions|2d)\b", RegexOptions.IgnoreCase))
+                return "Annotation & Details";
+
+            if (Regex.IsMatch(signal, @"\b(column|columns|beam|beams|truss|trusses|footing|footings|pile|piles|foundation|foundations|brace|bracing|joist|rebar|structural|steel|concrete|connection|girder)\b", RegexOptions.IgnoreCase))
+                return "Structural";
+
+            if (Regex.IsMatch(signal, @"\b(mep|mechanical|hvac|diffuser|grille|damper|vav|ahu|fcu|chiller|boiler|pump|fan|duct|plumbing|toilet|wc|urinal|sink|lavatory|basin|faucet|shower|bath|drain|valve|pipe|piping|sprinkler|fire|light|lighting|luminaire|lamp|sconce|downlight|pendant|troffer|electrical|panel|switch|receptacle|conduit|cable)\b", RegexOptions.IgnoreCase))
+                return "MEP";
+
+            if (Regex.IsMatch(signal, @"\b(chair|chairs|desk|desks|table|tables|sofa|couch|bed|beds|cabinet|wardrobe|shelf|shelving|workstation|seating|bench|furniture|casework|interior|interiors|signage|planting|tree|entourage|equipment|appliance|kitchen|locker|reception)\b", RegexOptions.IgnoreCase))
+                return "Furniture & Interiors";
+
+            if (Regex.IsMatch(signal, @"\b(door|doors|window|windows|shutter|entrance|gate|glazing|curtain|mullion|skylight|louvre|louver|wall|stair|stairs|railing|handrail|ramp|roof|ceiling|floor|architectural)\b", RegexOptions.IgnoreCase))
+                return "Architectural";
+
+            if (string.Equals(format, "DWG", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(format, "3DM", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(format, "SKP", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Blocks";
+            }
+
+            return "Architectural";
         }
 
         private static string FormatFileSize(long bytes)

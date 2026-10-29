@@ -24,6 +24,69 @@
       background-size: 1em 1em; 
       padding-right: 1.3rem !important; 
     }
+
+    /* Interactive Families & Blocks Asset Studio Effects */
+    .fam-blueprint-stage {
+      background-color: #f8fafc;
+      background-image:
+        linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+      background-size: 12px 12px;
+      transition: background-color 0.25s ease;
+    }
+    .group\/famcard:hover .fam-blueprint-stage {
+      background-color: #eef2ff;
+      background-image:
+        linear-gradient(to right, rgba(99, 102, 241, 0.16) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(99, 102, 241, 0.16) 1px, transparent 1px);
+    }
+    .fam-tilt-card {
+      transform: perspective(800px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--ty, 0px));
+      transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+      will-change: transform;
+    }
+    .fam-tilt-card:hover {
+      box-shadow: 0 12px 24px -8px rgba(79, 70, 229, 0.18), 0 4px 10px -4px rgba(15, 23, 42, 0.08);
+    }
+    .fam-glare {
+      background: radial-gradient(circle at var(--gx, 50%) var(--gy, 50%), rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 65%);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    .fam-tilt-card:hover .fam-glare {
+      opacity: 1;
+    }
+    .fam-accordion-item {
+      flex: 1 1 0%;
+      min-width: 78px;
+      transition: flex 0.32s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.22s ease, border-color 0.22s ease, transform 0.2s ease;
+    }
+    .fam-accordion-item:hover, .fam-accordion-item.fam-acc-active {
+      flex: 1.9 1 0%;
+      min-width: 132px;
+    }
+    .fam-flip-wrapper {
+      perspective: 900px;
+    }
+    .fam-flip-inner {
+      position: relative;
+      width: 100%;
+      transition: transform 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+      transform-style: preserve-3d;
+    }
+    .fam-flip-wrapper.is-flipped .fam-flip-inner {
+      transform: rotateY(180deg);
+    }
+    .fam-flip-front, .fam-flip-back {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    .fam-flip-back {
+      position: absolute;
+      inset: 0;
+      transform: rotateY(180deg);
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px] select-none">
@@ -237,35 +300,64 @@
     </div>
   </main>
 
-  <!-- VIEW 2: FAMILIES & BLOCKS CATALOG -->
+  <!-- VIEW 2: FAMILIES & BLOCKS CATALOG (INTERACTIVE ASSET STUDIO) -->
   <main id="view-families" class="hidden flex-1 overflow-y-auto scroll flex flex-col bg-slate-50">
-    <!-- FAMILIES SEARCH & ACTION HEADER -->
-    <section class="bg-white border-b border-slate-200 px-3 py-2.5 shrink-0 space-y-2">
+    <!-- FAMILIES SEARCH & INTERACTIVE STUDIO CONTROLS -->
+    <section class="bg-white border-b border-slate-200 px-3 py-2.5 shrink-0 space-y-2 shadow-2xs">
       <div class="flex items-center gap-1.5">
         <div class="relative flex-1">
           <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400"></i>
-          <input id="search-families" type="text" oninput="onSearchFamiliesInput()" placeholder="Search families, categories, blocks…"
-                 class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-8 pr-7 py-1.5 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white">
+          <input id="search-families" type="text" oninput="onSearchFamiliesInput()" placeholder="Search families, sizes, Revit categories, CAD blocks…"
+                 class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-8 pr-7 py-1.5 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition">
           <button id="search-families-clear" onclick="clearFamiliesSearch()" class="hidden absolute right-2 top-1.5 text-slate-400 hover:text-slate-700">
             <i data-lucide="x" class="w-3.5 h-3.5"></i>
           </button>
         </div>
-        <button onclick="loadFamilies(true)" title="Refresh families & blocks catalog" class="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 transition">
+
+        <!-- Interactive View Mode Switcher (Studio 3D Grid | Category Shelves | Compact Spec) -->
+        <div class="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 shrink-0" title="Switch catalog layout &amp; interactive mode">
+          <button type="button" id="fam-mode-studio" onclick="setFamilyViewMode('studio')" class="px-1.5 py-1 rounded text-[10px] font-semibold bg-white text-indigo-700 shadow-2xs flex items-center gap-1 transition" title="3D Tilt &amp; Flip Studio Cards">
+            <i data-lucide="layout-grid" class="w-3 h-3"></i>
+            <span class="hidden sm:inline">Studio</span>
+          </button>
+          <button type="button" id="fam-mode-shelves" onclick="setFamilyViewMode('shelves')" class="px-1.5 py-1 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 transition" title="Auto-Sorted Category Swimlanes">
+            <i data-lucide="layers" class="w-3 h-3"></i>
+            <span class="hidden sm:inline">Shelves</span>
+          </button>
+          <button type="button" id="fam-mode-compact" onclick="setFamilyViewMode('compact')" class="px-1.5 py-1 rounded text-[10px] font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 transition" title="Compact Specification Rows">
+            <i data-lucide="list" class="w-3 h-3"></i>
+            <span class="hidden sm:inline">List</span>
+          </button>
+        </div>
+
+        <button onclick="loadFamilies(true)" title="Refresh &amp; auto-sort families catalog" class="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100 transition">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
         </button>
         <button onclick="openFamiliesFolder()" title="Open Central Families Folder in Explorer" class="p-1.5 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition flex items-center gap-1">
           <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
-          <span class="text-[11px] font-semibold hidden sm:inline">Add Families</span>
+          <span class="text-[11px] font-semibold hidden sm:inline">Folder</span>
         </button>
       </div>
 
-      <!-- CATEGORY & FORMAT PILLS BAR -->
-      <div class="flex items-center gap-1.5 overflow-x-auto scroll py-0.5 text-[11px]" id="families-category-bar">
-        <button onclick="filterFamilyCategory('All')" id="fam-cat-All" class="fam-cat-btn px-2.5 py-1 rounded-md font-semibold bg-indigo-600 text-white shrink-0">All</button>
+      <!-- FORMAT FILTER PILLS + CATEGORY PILLS -->
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1 overflow-x-auto scroll py-0.5 text-[10.5px] flex-1" id="families-category-bar">
+          <button onclick="filterFamilyCategory('All')" id="fam-cat-All" class="fam-cat-btn px-2.5 py-0.5 rounded-md font-semibold bg-indigo-600 text-white shrink-0">All</button>
+        </div>
+        <div class="flex items-center gap-1 shrink-0 text-[10px]" id="families-format-bar">
+          <button onclick="filterFamilyFormat('All')" data-fmt="All" class="fam-fmt-btn px-1.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-white transition">ALL</button>
+          <button onclick="filterFamilyFormat('RFA')" data-fmt="RFA" class="fam-fmt-btn px-1.5 py-0.5 rounded font-mono font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">RFA</button>
+          <button onclick="filterFamilyFormat('DWG')" data-fmt="DWG" class="fam-fmt-btn px-1.5 py-0.5 rounded font-mono font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">DWG</button>
+        </div>
       </div>
     </section>
 
-    <!-- FAMILIES LIST / CARDS CONTAINER -->
+    <!-- INTERACTIVE EXPANDING ACCORDION CATEGORY DECK -->
+    <section id="families-accordion-section" class="px-3 pt-2.5 shrink-0">
+      <div id="families-accordion-deck" class="flex items-stretch gap-1.5 overflow-x-auto scroll pb-1"></div>
+    </section>
+
+    <!-- FAMILIES LIST / INTERACTIVE STUDIO CARDS CONTAINER -->
     <section id="families-list-view" class="p-3 space-y-2.5 flex-1 overflow-y-auto scroll">
       <div class="py-12 text-center text-slate-400 text-xs">
         <i data-lucide="loader-2" class="w-6 h-6 mx-auto text-indigo-500 animate-spin"></i>
@@ -2562,11 +2654,89 @@ function openDocLink(url) {
 }
 
 // ======================================================================
-//  Families & Blocks Catalog Tab
+//  Families & Blocks Catalog Tab (Interactive Asset Studio + Auto-Sorting)
 // ======================================================================
 let allFamilies = [];
 let selectedFamilyCategory = 'All';
+let selectedFamilyFormat = 'All';
+let familyViewMode = 'studio'; // 'studio' | 'shelves' | 'compact'
 let searchFamiliesText = '';
+let flippedFamilyCards = new Set();
+
+const FAMILY_CATEGORY_STYLES = {
+  'All': { icon: 'sparkles', grad: 'from-indigo-600 to-blue-600', lightBg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', sub: 'Complete asset studio' },
+  'Architectural': { icon: 'door-open', grad: 'from-blue-600 to-indigo-600', lightBg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', sub: 'Doors, windows & walls' },
+  'Furniture & Interiors': { icon: 'armchair', grad: 'from-amber-500 to-orange-600', lightBg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', sub: 'Seating, desks & casework' },
+  'MEP': { icon: 'fan', grad: 'from-emerald-600 to-teal-600', lightBg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', sub: 'HVAC, plumbing & lighting' },
+  'Structural': { icon: 'columns-3', grad: 'from-rose-600 to-pink-600', lightBg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', sub: 'Columns, beams & footings' },
+  'Annotation & Details': { icon: 'compass', grad: 'from-purple-600 to-indigo-600', lightBg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', sub: 'Tags, symbols & 2D details' },
+  'Blocks': { icon: 'boxes', grad: 'from-teal-600 to-cyan-600', lightBg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', sub: 'CAD DWG, Rhino & SketchUp' }
+};
+
+function getFamilyCategoryStyle(cat) {
+  if (FAMILY_CATEGORY_STYLES[cat]) return FAMILY_CATEGORY_STYLES[cat];
+  return { icon: 'folder-kanban', grad: 'from-slate-700 to-indigo-700', lightBg: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-700', sub: `Custom folder (${cat})` };
+}
+
+function resolveCanonicalFamilyCategory(fam) {
+  if (!fam) return 'Architectural';
+  const rawOrig = (fam.category || '').trim();
+  const raw = rawOrig.toLowerCase();
+
+  const isGenericOrRoot = !rawOrig ||
+    raw === 'general' ||
+    raw === 'families' ||
+    raw === 'family' ||
+    raw === 'rfa' ||
+    raw === 'dwg' ||
+    raw === '3dm' ||
+    raw === 'skp' ||
+    raw === 'uncategorized' ||
+    raw === 'unclassified' ||
+    raw === 'default' ||
+    raw === 'misc';
+
+  if (!isGenericOrRoot) {
+    return rawOrig;
+  }
+
+  // Fallback client-side auto-sorting when placed outside folders
+  const signal = `${fam.revitCategory || ''} ${fam.name || ''} ${fam.description || ''} ${fam.hostType || ''}`
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .toLowerCase();
+
+  if (/\b(tag|tags|symbol|symbols|north|titleblock|titleblocks|callout|section|elevation|grid|level|detail|details|annotation|annotations|breakline|keynote|legend|2d)\b/.test(signal)) return 'Annotation & Details';
+  if (/\b(column|columns|beam|beams|truss|trusses|footing|footings|pile|piles|foundation|foundations|brace|bracing|joist|rebar|structural|steel|concrete|girder)\b/.test(signal)) return 'Structural';
+  if (/\b(mep|mechanical|hvac|diffuser|grille|damper|vav|ahu|fcu|chiller|boiler|pump|fan|duct|plumbing|toilet|wc|urinal|sink|lavatory|basin|faucet|shower|bath|drain|valve|pipe|piping|sprinkler|fire|light|lighting|luminaire|lamp|sconce|downlight|pendant|troffer|electrical|panel|switch|receptacle)\b/.test(signal)) return 'MEP';
+  if (/\b(chair|chairs|desk|desks|table|tables|sofa|couch|bed|beds|cabinet|wardrobe|shelf|shelving|workstation|seating|bench|furniture|casework|interior|interiors|signage|planting|tree|entourage|appliance|kitchen|locker|reception)\b/.test(signal)) return 'Furniture & Interiors';
+  if (/\b(door|doors|window|windows|shutter|entrance|gate|glazing|curtain|mullion|skylight|louvre|louver|wall|stair|stairs|railing|handrail|ramp|roof|ceiling|floor|architectural)\b/.test(signal)) return 'Architectural';
+  if (['dwg', '3dm', 'skp'].includes((fam.format || '').toLowerCase())) return 'Blocks';
+  return 'Architectural';
+}
+
+function getActiveFamilyCategories() {
+  const autoOrder = ['Architectural', 'Furniture & Interiors', 'MEP', 'Structural', 'Annotation & Details', 'Blocks'];
+  const presentSet = new Set();
+  const customCats = [];
+
+  (allFamilies || []).forEach(f => {
+    const resolved = resolveCanonicalFamilyCategory(f);
+    f.category = resolved;
+    presentSet.add(resolved);
+    if (!autoOrder.includes(resolved) && !customCats.includes(resolved)) {
+      customCats.push(resolved);
+    }
+  });
+
+  const ordered = [...customCats];
+  autoOrder.forEach(c => {
+    if (presentSet.has(c) || (allFamilies || []).length === 0) {
+      if (!ordered.includes(c)) ordered.push(c);
+    }
+  });
+  return ordered;
+}
 
 async function loadFamilies(force = false) {
   const container = document.getElementById('families-list-view');
@@ -2576,21 +2746,26 @@ async function loadFamilies(force = false) {
     container.innerHTML = `
       <div class="py-12 text-center text-slate-400 text-xs">
         <i data-lucide="loader-2" class="w-6 h-6 mx-auto text-indigo-500 animate-spin"></i>
-        <p class="mt-2 font-semibold text-slate-600">Scanning central families & blocks library…</p>
+        <p class="mt-2 font-semibold text-slate-600">Scanning &amp; auto-sorting central families &amp; blocks library…</p>
       </div>`;
     icons();
   }
 
   try {
     const res = await Bridge.call('getFamiliesCatalog', { refresh: force });
-    allFamilies = (res && res.families) ? res.families : [];
+    allFamilies = ((res && res.families) ? res.families : []).map(f => ({
+      ...f,
+      category: resolveCanonicalFamilyCategory(f)
+    }));
     const countBadge = document.getElementById('families-count');
     if (countBadge) {
       countBadge.textContent = allFamilies.length;
       countBadge.classList.toggle('hidden', allFamilies.length === 0);
     }
 
-    renderFamilyCategories(res.categories || []);
+    const activeCats = getActiveFamilyCategories();
+    renderFamilyCategories(activeCats);
+    renderFamilyAccordionDeck(activeCats);
     renderFamilies();
   } catch (err) {
     container.innerHTML = `
@@ -2609,22 +2784,130 @@ function renderFamilyCategories(categories) {
   if (!bar) return;
 
   const cats = ['All', ...categories.filter(c => c !== 'All')];
-  bar.innerHTML = cats.map(cat => `
-    <button onclick="filterFamilyCategory('${esc(cat)}')" id="fam-cat-${esc(cat)}"
-            class="fam-cat-btn px-2.5 py-1 rounded-md font-semibold transition shrink-0 ${selectedFamilyCategory === cat ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
-      ${esc(cat)}
-    </button>
-  `).join('');
+  bar.innerHTML = cats.map(cat => {
+    const count = cat === 'All'
+      ? allFamilies.length
+      : allFamilies.filter(f => resolveCanonicalFamilyCategory(f) === cat).length;
+    const isActive = selectedFamilyCategory === cat;
+    return `
+      <button onclick="filterFamilyCategory('${esc(cat)}')" id="fam-cat-${esc(cat)}"
+              class="fam-cat-btn px-2 py-0.5 rounded-md font-semibold transition shrink-0 flex items-center gap-1 ${isActive ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+        <span>${esc(cat)}</span>
+        <span class="text-[9px] font-mono px-1 rounded ${isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-500'}">${count}</span>
+      </button>
+    `;
+  }).join('');
+}
+
+function renderFamilyAccordionDeck(categories) {
+  const deck = document.getElementById('families-accordion-deck');
+  const sec = document.getElementById('families-accordion-section');
+  if (!deck || !sec) return;
+
+  if (!allFamilies || allFamilies.length === 0) {
+    sec.classList.add('hidden');
+    return;
+  }
+  sec.classList.remove('hidden');
+
+  const populatedCats = categories.filter(c => c !== 'All' && allFamilies.some(f => resolveCanonicalFamilyCategory(f) === c));
+  const cardsList = ['All', ...populatedCats];
+
+  deck.innerHTML = cardsList.map(cat => {
+    const items = cat === 'All' ? allFamilies : allFamilies.filter(f => resolveCanonicalFamilyCategory(f) === cat);
+    const rfaCount = items.filter(f => (f.format || '').toUpperCase() === 'RFA').length;
+    const blockCount = items.length - rfaCount;
+    const isActive = selectedFamilyCategory === cat;
+    const st = getFamilyCategoryStyle(cat);
+
+    return `
+      <button type="button" onclick="filterFamilyCategory('${esc(cat)}')"
+              class="fam-accordion-item ${isActive ? 'fam-acc-active ring-2 ring-indigo-500 border-indigo-400 bg-white shadow-sm' : 'bg-white/90 hover:bg-white border-slate-200/90'} group relative rounded-xl border p-2 text-left overflow-hidden flex flex-col justify-between cursor-pointer">
+        <div class="absolute -right-3 -bottom-3 w-12 h-12 rounded-full bg-gradient-to-br ${st.grad} opacity-10 group-hover:opacity-25 group-hover:scale-125 transition-all"></div>
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="w-6 h-6 rounded-lg bg-gradient-to-br ${st.grad} text-white flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-110 transition-transform">
+            <i data-lucide="${st.icon}" class="w-3.5 h-3.5"></i>
+          </div>
+          <span class="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded-full ${st.lightBg} ${st.text} shrink-0">
+            ${items.length}
+          </span>
+        </div>
+        <div class="mt-1.5 min-w-0">
+          <div class="font-bold text-[11px] text-slate-800 truncate leading-tight">${esc(cat === 'All' ? 'All Assets' : cat)}</div>
+          <div class="text-[9.5px] text-slate-400 truncate mt-0.5 flex items-center gap-1">
+            ${rfaCount > 0 ? `<span>${rfaCount} RFA</span>` : ''}
+            ${rfaCount > 0 && blockCount > 0 ? `<span>•</span>` : ''}
+            ${blockCount > 0 ? `<span>${blockCount} Block</span>` : ''}
+            ${items.length === 0 ? `<span>${esc(st.sub)}</span>` : ''}
+          </div>
+        </div>
+      </button>
+    `;
+  }).join('');
 }
 
 function filterFamilyCategory(cat) {
   selectedFamilyCategory = cat;
-  document.querySelectorAll('.fam-cat-btn').forEach(btn => {
-    btn.className = 'fam-cat-btn px-2.5 py-1 rounded-md font-semibold transition shrink-0 bg-slate-100 text-slate-600 hover:bg-slate-200';
-  });
-  const activeBtn = document.getElementById(`fam-cat-${cat}`);
-  if (activeBtn) activeBtn.className = 'fam-cat-btn px-2.5 py-1 rounded-md font-semibold transition shrink-0 bg-indigo-600 text-white';
+  const activeCats = getActiveFamilyCategories();
+  renderFamilyCategories(activeCats);
+  renderFamilyAccordionDeck(activeCats);
   renderFamilies();
+}
+
+function filterFamilyFormat(fmt) {
+  selectedFamilyFormat = fmt;
+  document.querySelectorAll('.fam-fmt-btn').forEach(btn => {
+    const on = btn.dataset.fmt === fmt;
+    btn.className = `fam-fmt-btn px-1.5 py-0.5 rounded font-mono transition ${on ? 'font-bold bg-slate-800 text-white' : 'font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200'}`;
+  });
+  renderFamilies();
+}
+
+function setFamilyViewMode(mode) {
+  familyViewMode = mode;
+  ['studio', 'shelves', 'compact'].forEach(m => {
+    const btn = document.getElementById(`fam-mode-${m}`);
+    if (!btn) return;
+    const on = m === mode;
+    btn.className = `px-1.5 py-1 rounded text-[10px] font-semibold flex items-center gap-1 transition ${on ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'}`;
+  });
+  renderFamilies();
+}
+
+function handleFamTilt(e, el) {
+  const rect = el.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const cx = rect.width / 2;
+  const cy = rect.height / 2;
+  const rx = ((cy - y) / cy) * 4.5;
+  const ry = ((x - cx) / cx) * 4.5;
+  const gx = Math.round((x / rect.width) * 100);
+  const gy = Math.round((y / rect.height) * 100);
+  el.style.setProperty('--rx', `${rx.toFixed(2)}deg`);
+  el.style.setProperty('--ry', `${ry.toFixed(2)}deg`);
+  el.style.setProperty('--ty', `-2px`);
+  el.style.setProperty('--gx', `${gx}%`);
+  el.style.setProperty('--gy', `${gy}%`);
+}
+
+function resetFamTilt(el) {
+  el.style.setProperty('--rx', '0deg');
+  el.style.setProperty('--ry', '0deg');
+  el.style.setProperty('--ty', '0px');
+}
+
+function toggleFamCardFlip(famId, event) {
+  if (event) event.stopPropagation();
+  const wrap = document.getElementById(`fam-flip-${famId}`);
+  if (!wrap) return;
+  if (flippedFamilyCards.has(famId)) {
+    flippedFamilyCards.delete(famId);
+    wrap.classList.remove('is-flipped');
+  } else {
+    flippedFamilyCards.add(famId);
+    wrap.classList.add('is-flipped');
+  }
 }
 
 function onSearchFamiliesInput() {
@@ -2739,7 +3022,7 @@ function openFamilyPreviewModal(familyId) {
 
   bodyEl.innerHTML = `
     <!-- Large Thumbnail Preview Box -->
-    <div class="w-full h-48 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center relative overflow-hidden p-3 shadow-inner">
+    <div class="w-full h-48 rounded-xl fam-blueprint-stage border border-slate-200 flex items-center justify-center relative overflow-hidden p-3 shadow-inner">
       ${fam.thumbnail
         ? `<img src="${fam.thumbnail}" alt="${esc(fam.name)}" class="max-w-full max-h-full object-contain rounded drop-shadow-xs" />`
         : `<div class="w-28 h-28 flex flex-col items-center justify-center">${getFamilySchematicSvg(fam)}</div>`
@@ -2781,8 +3064,8 @@ function openFamilyPreviewModal(familyId) {
         <div class="font-bold text-slate-800 mt-0.5 truncate">${esc(fam.fileVersion || fam.format || 'RFA')} • ${esc(fam.fileSize || '')}</div>
       </div>
       <div class="p-2 rounded-lg bg-slate-50 border border-slate-200/80">
-        <div class="text-[9.5px] uppercase font-semibold text-slate-400">Library Folder</div>
-        <div class="font-bold text-slate-800 mt-0.5 truncate">${esc(fam.category || 'General')}</div>
+        <div class="text-[9.5px] uppercase font-semibold text-slate-400">Catalog Category</div>
+        <div class="font-bold text-slate-800 mt-0.5 truncate">${esc(fam.category || 'Architectural')}</div>
       </div>
     </div>
 
@@ -2853,63 +3136,151 @@ async function saveFamilyCustomDescription(familyId) {
   }
 }
 
-function renderFamilies() {
-  const container = document.getElementById('families-list-view');
-  if (!container) return;
+function renderStudioFamilyCard(fam) {
+  const desc = getFamilySummaryDescription(fam);
+  const safePath = esc(fam.fullPath || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const types = fam.familyTypes || [];
+  const params = fam.parametersSummary || [];
+  const isFlipped = flippedFamilyCards.has(fam.id);
+  const resolvedCat = resolveCanonicalFamilyCategory(fam);
+  const st = getFamilyCategoryStyle(resolvedCat);
 
-  let filtered = allFamilies;
+  return `
+    <div id="fam-flip-${esc(fam.id)}" class="fam-flip-wrapper ${isFlipped ? 'is-flipped' : ''}">
+      <div class="fam-flip-inner">
+        <!-- FRONT FACE: Interactive 3D-Tilt Visual Studio Card -->
+        <div onmousemove="handleFamTilt(event, this)" onmouseleave="resetFamTilt(this)"
+             class="fam-flip-front fam-tilt-card group/famcard bg-white border border-slate-200/90 hover:border-indigo-400 rounded-xl overflow-hidden flex flex-col justify-between relative">
+          <div class="fam-glare absolute inset-0 z-10"></div>
 
-  if (selectedFamilyCategory !== 'All') {
-    filtered = filtered.filter(f => f.category === selectedFamilyCategory);
-  }
+          <!-- Top Visual Blueprint Stage -->
+          <div onclick="openFamilyPreviewModal('${esc(fam.id)}')"
+               class="fam-blueprint-stage h-28 w-full relative flex items-center justify-center p-2.5 border-b border-slate-100 cursor-pointer overflow-hidden">
+            ${fam.thumbnail
+              ? `<img src="${fam.thumbnail}" alt="${esc(fam.name)}" class="max-h-full max-w-full object-contain group-hover/famcard:scale-110 transition-transform duration-300 drop-shadow-2xs" />`
+              : `<div class="w-16 h-16 group-hover/famcard:scale-110 transition-transform duration-300">${getFamilySchematicSvg(fam)}</div>`
+            }
 
-  if (searchFamiliesText) {
-    filtered = filtered.filter(f => 
-      (f.name && f.name.toLowerCase().includes(searchFamiliesText)) ||
-      (f.category && f.category.toLowerCase().includes(searchFamiliesText)) ||
-      (f.revitCategory && f.revitCategory.toLowerCase().includes(searchFamiliesText)) ||
-      (f.description && f.description.toLowerCase().includes(searchFamiliesText)) ||
-      (f.format && f.format.toLowerCase().includes(searchFamiliesText))
-    );
-  }
+            <!-- Top-left Format + Version Pill -->
+            <div class="absolute top-1.5 left-1.5 flex items-center gap-1 z-20">
+              <span class="px-1.5 py-0.2 rounded text-[8.5px] font-bold font-mono bg-slate-900/85 text-white shadow-2xs">${esc(fam.format || 'RFA')}</span>
+              ${fam.fileVersion ? `<span class="px-1.5 py-0.2 rounded text-[8.5px] font-medium bg-white/90 text-slate-700 border border-slate-200/80">${esc(fam.fileVersion)}</span>` : ''}
+            </div>
 
-  if (filtered.length === 0) {
-    if (allFamilies.length === 0) {
-      container.innerHTML = `
-        <div class="p-6 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-3 mt-4">
-          <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-            <i data-lucide="box" class="w-6 h-6"></i>
+            <!-- Top-right 3D Flip Specs Button & Enlarge Button -->
+            <div class="absolute top-1.5 right-1.5 flex items-center gap-1 z-20">
+              <button type="button" onclick="toggleFamCardFlip('${esc(fam.id)}', event)" title="Flip card in 3D to inspect specs &amp; family types"
+                      class="px-1.5 py-0.5 rounded bg-white/90 hover:bg-indigo-600 text-slate-700 hover:text-white border border-slate-200/80 text-[8.5px] font-semibold flex items-center gap-0.5 shadow-2xs transition">
+                <i data-lucide="rotate-cw" class="w-2.5 h-2.5"></i>
+                <span>Specs</span>
+              </button>
+              <button type="button" onclick="event.stopPropagation(); openFamilyPreviewModal('${esc(fam.id)}')" title="Open large preview &amp; note editor"
+                      class="p-1 rounded bg-white/90 hover:bg-indigo-600 text-slate-700 hover:text-white border border-slate-200/80 shadow-2xs transition">
+                <i data-lucide="maximize-2" class="w-2.5 h-2.5"></i>
+              </button>
+            </div>
+
+            <!-- Bottom-left Host & Types Floating Pill -->
+            <div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between gap-1 pointer-events-none">
+              <span class="px-1.5 py-0.2 rounded text-[8.5px] font-semibold ${st.lightBg} ${st.text} border ${st.border} truncate max-w-[65%]">
+                ${esc(fam.revitCategory || resolvedCat)}
+              </span>
+              ${types.length > 0 ? `
+                <span class="px-1.5 py-0.2 rounded text-[8.5px] font-mono font-bold bg-emerald-600/90 text-white shadow-2xs">
+                  ${types.length} ${types.length === 1 ? 'Type' : 'Types'}
+                </span>
+              ` : `<span class="px-1.5 py-0.2 rounded text-[8.5px] font-mono bg-white/90 text-slate-500 border border-slate-200/70">${esc(fam.fileSize)}</span>`}
+            </div>
           </div>
-          <div>
-            <h3 class="font-bold text-slate-800 text-sm">Central Families Library is Ready</h3>
-            <p class="text-xs text-slate-500 max-w-xs mx-auto mt-1">
-              Add company standard Revit families (.rfa) or CAD/Rhino blocks into the central folder to make them accessible to your whole team.
-            </p>
+
+          <!-- Card Body: Title + Small Description + Action Bar -->
+          <div class="p-2.5 flex-1 flex flex-col justify-between bg-white relative z-20">
+            <div>
+              <div class="flex items-start justify-between gap-1">
+                <button type="button" onclick="openFamilyPreviewModal('${esc(fam.id)}')" class="font-bold text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate text-left transition" title="${esc(fam.name)}">
+                  ${esc(fam.name)}
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-500 mt-0.5 line-clamp-2 leading-snug min-h-[26px]" title="${esc(desc)}">
+                ${esc(desc)}
+              </p>
+            </div>
+
+            <div class="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-slate-100">
+              <button type="button" onclick="loadFamilyToProject('${safePath}', false)" class="flex-1 py-1 px-2 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10.5px] flex items-center justify-center gap-1 transition">
+                <i data-lucide="download" class="w-3 h-3 text-slate-500"></i>
+                <span>Load</span>
+              </button>
+              <button type="button" onclick="loadFamilyToProject('${safePath}', true)" class="flex-1 py-1 px-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10.5px] flex items-center justify-center gap-1 shadow-2xs transition">
+                <i data-lucide="mouse-pointer-click" class="w-3 h-3 text-indigo-200"></i>
+                <span>Place</span>
+              </button>
+            </div>
           </div>
-          <button onclick="openFamiliesFolder()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition">
-            <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
-            <span>Open Families Folder</span>
-          </button>
-        </div>`;
-    } else {
-      container.innerHTML = `
-        <div class="p-8 text-center text-slate-400 text-xs">
-          <i data-lucide="search-x" class="w-6 h-6 mx-auto text-slate-300"></i>
-          <p class="mt-2 font-semibold text-slate-600">No components match your search</p>
-          <button onclick="clearFamiliesSearch(); filterFamilyCategory('All')" class="mt-2 text-indigo-600 hover:underline">Clear search &amp; filters</button>
-        </div>`;
-    }
-    icons();
-    return;
-  }
+        </div>
 
-  container.innerHTML = filtered.map(fam => {
-    const desc = getFamilySummaryDescription(fam);
-    const safePath = esc(fam.fullPath || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const typesCount = (fam.familyTypes && fam.familyTypes.length) ? fam.familyTypes.length : 0;
-    const revCat = fam.revitCategory && fam.revitCategory !== fam.category ? fam.revitCategory : null;
+        <!-- BACK FACE: 3D-Flipped Technical Specification Card -->
+        <div class="fam-flip-back bg-slate-900 text-slate-100 border border-indigo-500/60 rounded-xl p-2.5 flex flex-col justify-between shadow-lg overflow-hidden">
+          <div class="space-y-1.5 overflow-y-auto scroll pr-0.5">
+            <div class="flex items-center justify-between gap-1 border-b border-slate-800 pb-1.5">
+              <div class="font-bold text-[11px] text-indigo-300 truncate" title="${esc(fam.name)}">${esc(fam.name)}</div>
+              <button type="button" onclick="toggleFamCardFlip('${esc(fam.id)}', event)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-indigo-600 text-[9px] font-semibold text-slate-200 flex items-center gap-0.5 shrink-0 transition">
+                <i data-lucide="rotate-ccw" class="w-2.5 h-2.5"></i>
+                <span>Front</span>
+              </button>
+            </div>
 
-    return `
+            <div class="grid grid-cols-2 gap-1 text-[9.5px]">
+              <div class="bg-slate-800/90 rounded p-1">
+                <span class="text-slate-400 block text-[8px] uppercase">Category</span>
+                <span class="font-semibold text-white truncate block">${esc(fam.revitCategory || resolvedCat)}</span>
+              </div>
+              <div class="bg-slate-800/90 rounded p-1">
+                <span class="text-slate-400 block text-[8px] uppercase">Placement</span>
+                <span class="font-semibold text-white truncate block">${esc(fam.hostType || 'Standard')}</span>
+              </div>
+            </div>
+
+            ${types.length > 0 ? `
+              <div>
+                <div class="text-[8.5px] uppercase text-slate-400 font-semibold mb-0.5">Types / Sizes (${types.length})</div>
+                <div class="flex flex-wrap gap-1">
+                  ${types.slice(0, 4).map(t => `<span class="px-1.5 py-0.1 rounded bg-indigo-950/90 border border-indigo-700/60 text-indigo-200 font-mono text-[9px]">${esc(t)}</span>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            ${params.length > 0 ? `
+              <div class="text-[9px] text-emerald-300 font-mono truncate">
+                ${esc(params.slice(0, 2).join(' • '))}
+              </div>
+            ` : `<div class="text-[9.5px] text-slate-300 line-clamp-2">${esc(desc)}</div>`}
+          </div>
+
+          <div class="flex items-center gap-1.5 pt-1.5 border-t border-slate-800 mt-1">
+            <button type="button" onclick="openFamilyPreviewModal('${esc(fam.id)}')" class="py-1 px-2 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-[10px] flex items-center gap-1 transition">
+              <i data-lucide="maximize-2" class="w-3 h-3"></i>
+              <span>Inspect</span>
+            </button>
+            <button type="button" onclick="loadFamilyToProject('${safePath}', true)" class="flex-1 py-1 px-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[10px] flex items-center justify-center gap-1 transition">
+              <i data-lucide="mouse-pointer-click" class="w-3 h-3"></i>
+              <span>Load &amp; Place</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCompactFamilyRow(fam) {
+  const desc = getFamilySummaryDescription(fam);
+  const safePath = esc(fam.fullPath || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const typesCount = (fam.familyTypes && fam.familyTypes.length) ? fam.familyTypes.length : 0;
+  const resolvedCat = resolveCanonicalFamilyCategory(fam);
+  const revCat = fam.revitCategory && fam.revitCategory !== resolvedCat ? fam.revitCategory : null;
+
+  return `
     <div class="bg-white border border-slate-200/90 rounded-lg p-2.5 hover:border-indigo-300 hover:shadow-xs transition">
       <div class="flex gap-2.5 items-start">
         ${renderFamilyThumbnailBox(fam, 'w-16 h-16')}
@@ -2921,16 +3292,14 @@ function renderFamilies() {
                 ${esc(fam.name)}
               </button>
               <span class="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
-                ${esc(fam.category)}
+                ${esc(resolvedCat)}
               </span>
             </div>
 
-            <!-- Small Description -->
             <p class="text-[10.5px] text-slate-600 mt-0.5 line-clamp-1 leading-snug" title="${esc(desc)}">
               ${esc(desc)}
             </p>
 
-            <!-- Compact Data Pills -->
             <div class="flex items-center flex-wrap gap-1 mt-1 text-[9.5px]">
               ${revCat ? `<span class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-medium">${esc(revCat)}</span>` : ''}
               ${fam.hostType ? `<span class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">${esc(fam.hostType)}</span>` : ''}
@@ -2958,7 +3327,104 @@ function renderFamilies() {
       </div>
     </div>
   `;
-  }).join('');
+}
+
+function renderFamilies() {
+  const container = document.getElementById('families-list-view');
+  if (!container) return;
+
+  let filtered = allFamilies;
+
+  if (selectedFamilyCategory !== 'All') {
+    filtered = filtered.filter(f => resolveCanonicalFamilyCategory(f) === selectedFamilyCategory);
+  }
+
+  if (selectedFamilyFormat !== 'All') {
+    filtered = filtered.filter(f => (f.format || '').toUpperCase() === selectedFamilyFormat);
+  }
+
+  if (searchFamiliesText) {
+    filtered = filtered.filter(f => 
+      (f.name && f.name.toLowerCase().includes(searchFamiliesText)) ||
+      (f.category && f.category.toLowerCase().includes(searchFamiliesText)) ||
+      (f.revitCategory && f.revitCategory.toLowerCase().includes(searchFamiliesText)) ||
+      (f.description && f.description.toLowerCase().includes(searchFamiliesText)) ||
+      (f.format && f.format.toLowerCase().includes(searchFamiliesText)) ||
+      ((f.familyTypes || []).some(t => t.toLowerCase().includes(searchFamiliesText)))
+    );
+  }
+
+  if (filtered.length === 0) {
+    if (allFamilies.length === 0) {
+      container.innerHTML = `
+        <div class="p-6 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-3 mt-4">
+          <div class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+            <i data-lucide="box" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-800 text-sm">Central Families &amp; Blocks Studio is Ready</h3>
+            <p class="text-xs text-slate-500 max-w-xs mx-auto mt-1">
+              Drop Revit families (<code>.rfa</code>) or CAD/Rhino blocks (<code>.dwg</code>, <code>.3dm</code>, <code>.skp</code>) into your central folder. Subfolders become categories automatically, and loose files are auto-sorted by discipline!
+            </p>
+          </div>
+          <button onclick="openFamiliesFolder()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition">
+            <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
+            <span>Open Central Families Folder</span>
+          </button>
+        </div>`;
+    } else {
+      container.innerHTML = `
+        <div class="p-8 text-center text-slate-400 text-xs">
+          <i data-lucide="search-x" class="w-6 h-6 mx-auto text-slate-300"></i>
+          <p class="mt-2 font-semibold text-slate-600">No families or blocks match these filters</p>
+          <button onclick="clearFamiliesSearch(); filterFamilyFormat('All'); filterFamilyCategory('All');" class="mt-2 text-indigo-600 hover:underline">Reset search &amp; filters</button>
+        </div>`;
+    }
+    icons();
+    return;
+  }
+
+  if (familyViewMode === 'shelves') {
+    const activeCats = getActiveFamilyCategories();
+    const groups = [];
+    activeCats.forEach(cat => {
+      const items = filtered.filter(f => resolveCanonicalFamilyCategory(f) === cat);
+      if (items.length > 0) groups.push({ cat, items });
+    });
+
+    container.innerHTML = groups.map(({ cat, items }) => {
+      const st = getFamilyCategoryStyle(cat);
+      return `
+        <div class="bg-white/80 border border-slate-200/90 rounded-xl p-2.5 space-y-2 shadow-2xs">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-lg bg-gradient-to-br ${st.grad} text-white flex items-center justify-center shadow-2xs">
+                <i data-lucide="${st.icon}" class="w-3.5 h-3.5"></i>
+              </div>
+              <div>
+                <span class="font-bold text-xs text-slate-800">${esc(cat)}</span>
+                <span class="text-[10px] text-slate-400 ml-1.5">${esc(st.sub)}</span>
+              </div>
+            </div>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${st.lightBg} ${st.text}">
+              ${items.length} ${items.length === 1 ? 'asset' : 'assets'}
+            </span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            ${items.map(fam => renderStudioFamilyCard(fam)).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } else if (familyViewMode === 'compact') {
+    container.innerHTML = `<div class="space-y-2">${filtered.map(fam => renderCompactFamilyRow(fam)).join('')}</div>`;
+  } else {
+    container.innerHTML = `
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        ${filtered.map(fam => renderStudioFamilyCard(fam)).join('')}
+      </div>
+    `;
+  }
 
   icons();
 }
@@ -3266,13 +3732,18 @@ async function ensureFamiliesLoaded() {
   try {
     const res = await Bridge.call('getFamiliesCatalog', { refresh: false });
     if (res && res.families) {
-      allFamilies = res.families;
+      allFamilies = res.families.map(f => ({
+        ...f,
+        category: resolveCanonicalFamilyCategory(f)
+      }));
       const countBadge = document.getElementById('families-count');
       if (countBadge) {
         countBadge.textContent = allFamilies.length;
         countBadge.classList.toggle('hidden', allFamilies.length === 0);
       }
-      renderFamilyCategories(res.categories || []);
+      const activeCats = getActiveFamilyCategories();
+      renderFamilyCategories(activeCats);
+      renderFamilyAccordionDeck(activeCats);
     }
   } catch (e) {}
   return allFamilies || [];
