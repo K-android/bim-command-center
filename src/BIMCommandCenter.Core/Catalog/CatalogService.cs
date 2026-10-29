@@ -204,7 +204,6 @@ namespace BIMCommandCenter.Core.Catalog
                         string addinDir = Path.GetDirectoryName(addinFile);
                         string relDir = addinDir.Length > root.Length ? addinDir.Substring(root.Length).TrimStart('\\', '/') : "";
                         string[] parts = relDir.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
-                        string category = DetermineCategory(parts, Path.GetFileNameWithoutExtension(addinFile));
 
                         var cmdMatches = Regex.Matches(content, @"<AddIn\s+Type=""Command""[^>]*>([\s\S]*?)</AddIn>", RegexOptions.IgnoreCase);
                         foreach (Match m in cmdMatches)
@@ -231,6 +230,8 @@ namespace BIMCommandCenter.Core.Catalog
 
                             string toolTitle = !string.IsNullOrWhiteSpace(cmdName) ? cmdName : Regex.Replace(Path.GetFileNameWithoutExtension(targetDll), "[_-]+", " ");
                             try { toolTitle = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(toolTitle); } catch {}
+
+                            string category = DetermineCategory(parts, toolTitle, desc, "NativeAddin", targetDll);
 
                             string idKey = Path.GetFileNameWithoutExtension(addinFile) + "-" + (!string.IsNullOrEmpty(cmdName) ? cmdName : fullClass);
                             string toolId = "local-addin-" + Regex.Replace(idKey.ToLowerInvariant(), "[^a-z0-9]+", "-");
@@ -402,8 +403,6 @@ namespace BIMCommandCenter.Core.Catalog
                         }
                     }
 
-                    string category = DetermineCategory(parts, baseName);
-
                     string targetPath = file;
                     string actionType = (ext == ".gh" || ext == ".ghx") ? "Grasshopper" : (ext == ".dyn" ? "Dynamo" : (ext == ".py" ? "PyRevit" : "NativeAddin"));
                     string iconName = (ext == ".gh" || ext == ".ghx") ? "Box" : (ext == ".dyn" ? "PlayCircle" : (ext == ".py" ? "Code" : "Activity"));
@@ -442,11 +441,13 @@ namespace BIMCommandCenter.Core.Catalog
                         }
                     }
 
-                    var meta = ExtractScriptMetadata(targetPath, finalExt, friendlyTitle, category);
+                    var meta = ExtractScriptMetadata(targetPath, finalExt, friendlyTitle, "");
                     if (!string.IsNullOrWhiteSpace(meta.TitleOverride) && !meta.TitleOverride.Equals("script", StringComparison.OrdinalIgnoreCase))
                     {
                         friendlyTitle = meta.TitleOverride;
                     }
+
+                    string category = DetermineCategory(parts, friendlyTitle, meta.Description, actionType, targetPath);
 
                     string safeId = Regex.Replace(friendlyTitle.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
                     if (string.IsNullOrEmpty(safeId) || safeId == "script")
@@ -1100,6 +1101,22 @@ namespace BIMCommandCenter.Core.Catalog
             tool["executionMode"] = NormalizeMode(tool.Str("executionMode", "Interactive"));
             tool["status"] = tool.Str("status", "Active");
 
+            // Ensure category maps cleanly to one of the 6 core BIM domain categories
+            string rawCat = tool.Str("category");
+            string mappedCat = TryMatchCanonicalCategory(rawCat);
+            if (!string.IsNullOrEmpty(mappedCat))
+            {
+                tool["category"] = mappedCat;
+            }
+            else
+            {
+                tool["category"] = InferCategoryFromName(
+                    tool.Str("title"),
+                    tool.Str("description") + " " + string.Join(" ", tool.StrList("keywords")),
+                    tool.Str("actionType"),
+                    tool.Str("targetPath"));
+            }
+
             if (string.IsNullOrWhiteSpace(tool.Str("toolId")))
                 tool["toolId"] = Regex.Replace((tool.Str("title") ?? "tool").ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
 
@@ -1143,75 +1160,209 @@ namespace BIMCommandCenter.Core.Catalog
 
                 return true;
             }).ToList();
-        private static string DetermineCategory(string[] parts, string baseName)
+
+        private static readonly string[] CanonicalCategories = new[]
         {
-            string category = "Central Library";
-            var engineFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "Dynamo", "PyRevit", "Python", "Custom Addins", "CustomAddins", "Addins", "Add-ins", "Grasshopper", "Rhino", "Scripts"
-            };
+            "Documentation",
+            "Modeling",
+            "Computational",
+            "Quality & QA",
+            "Model Maintenance",
+            "Collaboration"
+        };
 
-            if (parts.Length == 0)
+        private static string TryMatchCanonicalCategory(string candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return null;
+            string c = candidate.Trim();
+
+            // Ignore pyRevit bundle folders (.pushbutton, .tab, .panel, .extension, etc.) and engine folders
+            if (Regex.IsMatch(c, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton|tab|panel|stack|extension|nobutton)$", RegexOptions.IgnoreCase))
+                return null;
+
+            foreach (var cat in CanonicalCategories)
             {
-                category = "Central Library";
-            }
-            else if (parts.Length == 1)
-            {
-                category = engineFolderNames.Contains(parts[0]) ? "Central Library" : parts[0];
-            }
-            else
-            {
-                if (engineFolderNames.Contains(parts[parts.Length - 1]))
-                {
-                    category = string.Join(" / ", parts.Take(parts.Length - 1));
-                }
-                else if (engineFolderNames.Contains(parts[0]))
-                {
-                    category = string.Join(" / ", parts.Skip(1));
-                }
-                else
-                {
-                    category = string.Join(" / ", parts);
-                }
+                if (string.Equals(c, cat, StringComparison.OrdinalIgnoreCase))
+                    return cat;
             }
 
-            if (string.Equals(category, "Central Library", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(category))
+            string lower = c.ToLowerInvariant();
+            if (lower == "qa" || lower == "qc" || lower == "qa/qc" || lower == "quality" || lower == "audit" || lower == "model health" || lower == "standards")
+                return "Quality & QA";
+            if (lower == "maintenance" || lower == "cleanup" || lower == "hygiene" || lower == "purge")
+                return "Model Maintenance";
+            if (lower == "docs" || lower == "annotation" || lower == "annotations" || lower == "sheets" || lower == "views" || lower == "drawing" || lower == "drawings")
+                return "Documentation";
+            if (lower == "model" || lower == "geometry" || lower == "architecture" || lower == "structure" || lower == "structural" || lower == "mep" || lower == "families")
+                return "Modeling";
+            if (lower == "generative" || lower == "parametric" || lower == "design" || lower == "computational design")
+                return "Computational";
+            if (lower == "coordination" || lower == "clash" || lower == "bim 360" || lower == "acc" || lower == "interoperability" || lower == "links")
+                return "Collaboration";
+
+            return null;
+        }
+
+        private static string DetermineCategory(string[] parts, string title, string description = null, string actionType = null, string targetPath = null)
+        {
+            // 1. Only accept a folder part as an explicit category if it matches one of the 6 canonical BIM domain categories.
+            // Subfolders for add-ins (e.g. Custom Addins\MyAddin\MyAddin.dll) or pyRevit pushbuttons (e.g. PyRevit\MyTool.pushbutton\script.py)
+            // must NEVER become standalone categories on the homepage.
+            if (parts != null && parts.Length > 0)
             {
-                category = InferCategoryFromName(baseName);
+                foreach (var part in parts)
+                {
+                    string matched = TryMatchCanonicalCategory(part);
+                    if (!string.IsNullOrEmpty(matched))
+                        return matched;
+                }
             }
 
-            return category;
+            // 2. Otherwise, infer the best domain category from title, folder context, description, and script/graph contents.
+            string folderContext = parts != null ? string.Join(" ", parts) : "";
+            return InferCategoryFromName(title, (description ?? "") + " " + folderContext, actionType, targetPath);
+        }
+
+        private static string NormalizeTokensForScoring(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return "";
+            // Split CamelCase / PascalCase words (e.g. "WallOpeningAlignment" -> "Wall Opening Alignment", "AutoDim" -> "Auto Dim")
+            string s = Regex.Replace(input, @"([a-z0-9])([A-Z])", "$1 $2");
+            s = Regex.Replace(s, @"([A-Z]+)([A-Z][a-z])", "$1 $2");
+            // Replace underscores, hyphens, dots, slashes, and punctuation with spaces so word-boundary regexes match reliably
+            s = Regex.Replace(s, @"[^a-zA-Z0-9]+", " ");
+            return " " + s.ToLowerInvariant().Trim() + " ";
         }
 
         /// <summary>
-        /// Intelligently categorizes a script based on filename / title keywords when not explicitly specified by a folder.
+        /// Intelligently categorizes a tool into one of the 6 core BIM categories using multi-signal weighted keyword scoring
+        /// across the tool title, description, folder path, and script/graph contents.
         /// </summary>
-        public static string InferCategoryFromName(string fileNameOrTitle)
+        public static string InferCategoryFromName(string fileNameOrTitle, string description = null, string actionType = null, string targetPath = null)
         {
-            if (string.IsNullOrWhiteSpace(fileNameOrTitle)) return "Documentation";
-            string lower = fileNameOrTitle.ToLowerInvariant();
+            string titleNorm = NormalizeTokensForScoring(fileNameOrTitle);
 
-            // Quality & QA
-            if (Regex.IsMatch(lower, @"\b(audit|health|check|checker|qa|qc|warning|warnings|clash|clashes|hygiene|compliance|validate|validation|corrupt)\b", RegexOptions.IgnoreCase))
-                return "Quality & QA";
+            // Filter out generic synthetic description boilerplate so it doesn't skew scoring
+            string cleanDesc = description ?? "";
+            if (cleanDesc.StartsWith("Enterprise automation tool for ", StringComparison.OrdinalIgnoreCase))
+                cleanDesc = "";
+            string descNorm = NormalizeTokensForScoring(cleanDesc);
 
-            // Documentation & Annotations
-            if (Regex.IsMatch(lower, @"\b(dim|dims|dimension|dimensions|tag|tags|text|sheet|sheets|view|views|schedule|schedules|door|doors|room|rooms|number|renumber|renumbering|mark|marks|export|pdf|dwg|nwc|ifc|titleblock|annotation|annotations|keynote|keynotes|revision|revisions|legend|legends)\b", RegexOptions.IgnoreCase))
-                return "Documentation";
+            // Inspect a lightweight snippet of script/graph content if available for deeper classification signals
+            string contentNorm = "";
+            if (!string.IsNullOrEmpty(targetPath) && File.Exists(targetPath))
+            {
+                try
+                {
+                    string ext = Path.GetExtension(targetPath).ToLowerInvariant();
+                    if (ext == ".py" || ext == ".dyn" || ext == ".addin")
+                    {
+                        using (var sr = new StreamReader(targetPath))
+                        {
+                            char[] buffer = new char[8192];
+                            int read = sr.Read(buffer, 0, buffer.Length);
+                            if (read > 0)
+                            {
+                                contentNorm = NormalizeTokensForScoring(new string(buffer, 0, read));
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
 
-            // Model Maintenance
-            if (Regex.IsMatch(lower, @"\b(purge|cad|unused|unplaced|redundant|workset|worksets|sync|compact|cleanup|clean|maintenance|link|links|import|imports)\b", RegexOptions.IgnoreCase))
-                return "Model Maintenance";
+            var scores = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Modeling"] = 0,
+                ["Computational"] = 0,
+                ["Quality & QA"] = 0,
+                ["Model Maintenance"] = 0,
+                ["Collaboration"] = 0,
+                ["Documentation"] = 0
+            };
 
-            // Modeling & Geometry
-            if (Regex.IsMatch(lower, @"\b(wall|walls|floor|floors|column|columns|beam|beams|slab|slabs|family|families|geometry|mass|facade|grid|grids|level|levels|railing|railings|stair|stairs|roof|roofs|join|split|ceiling|ceilings|curtain|framing|structure|structural|mep|pipe|pipes|duct|ducts|conduit|conduits|electrical|plumbing|hvac)\b", RegexOptions.IgnoreCase))
+            void ScoreKeywords(string category, string[] strongTerms, string[] normalTerms)
+            {
+                foreach (var term in strongTerms)
+                {
+                    string padded = " " + term + " ";
+                    if (titleNorm.Contains(padded)) scores[category] += 8;
+                    if (descNorm.Contains(padded)) scores[category] += 3;
+                    if (contentNorm.Contains(padded)) scores[category] += 1;
+                }
+                foreach (var term in normalTerms)
+                {
+                    string padded = " " + term + " ";
+                    if (titleNorm.Contains(padded)) scores[category] += 4;
+                    if (descNorm.Contains(padded)) scores[category] += 2;
+                    if (contentNorm.Contains(padded)) scores[category] += 1;
+                }
+            }
+
+            // 1. Modeling (3D elements, geometry creation, families, MEP, structure, architectural elements)
+            ScoreKeywords("Modeling",
+                new[] { "wall", "walls", "floor", "floors", "ceiling", "ceilings", "roof", "roofs", "column", "columns", "beam", "beams", "slab", "slabs", "stair", "stairs", "railing", "railings", "curtain", "mullion", "mullions", "family", "families", "directshape", "direct shape", "toposolid", "topography", "foundation", "rebar", "framing", "duct", "ducts", "pipe", "pipes", "conduit", "conduits", "cable tray", "hanger", "hangers", "sleeve", "sleeves", "opening", "openings", "penetration", "penetrations", "join", "unjoin", "split", "finish", "finishes", "skirting", "room boundary", "bounding" },
+                new[] { "model", "modeling", "modelling", "place", "placement", "create", "generator", "generate", "extrude", "sweep", "blend", "solid", "void", "structural", "structure", "mep", "hvac", "plumbing", "piping", "electrical", "mechanical", "architectural", "fixture", "fixtures", "equipment", "furniture", "casework", "window", "windows", "grid", "grids", "level", "levels", "offset", "align", "copy", "mirror", "array", "rotate", "elevation", "slope", "insulation", "lining", "fitting", "fittings", "accessory", "valve", "diffuser", "sprinkler", "lighting", "panelboard" }
+            );
+
+            // 2. Computational (parametric, generative, Rhino/Grasshopper, attractors, paneling, algorithms, solar/environmental)
+            ScoreKeywords("Computational",
+                new[] { "computational", "parametric", "generative", "grasshopper", "rhino", "voronoi", "attractor", "attractors", "tessellation", "paneling", "panelization", "diagrid", "spaceframe", "truss", "topological", "optimization", "optimize", "genetic", "galapagos", "refinery", "solar", "radiation", "daylight", "isovist", "viewfit", "pathfinding", "voxel", "subdivision", "nurbs", "bspline", "surface", "surfaces", "mesh", "meshes", "adaptive", "mass", "massing", "facade" },
+                new[] { "algorithm", "algorithmic", "math", "formula", "sine", "cosine", "curve", "curves", "spline", "vector", "matrix", "point", "points", "grid", "pattern", "patterns", "random", "randomize", "gradient", "interpolate", "simulation", "analysis", "environmental", "acoustic", "thermal", "wind", "shadow", "form", "morph", "twist", "taper", "wave", "hex", "hexagon", "diamond" }
+            );
+
+            // 3. Quality & QA (auditing, health checks, warnings, standards compliance, parameter validation, QA/QC)
+            ScoreKeywords("Quality & QA",
+                new[] { "audit", "auditor", "health", "qa", "qc", "qaqc", "quality", "check", "checker", "warning", "warnings", "compliance", "validate", "validation", "validator", "standard", "standards", "naming", "convention", "conventions", "corrupt", "corruption", "inspect", "inspector", "inspection", "verify", "verification", "benchmark", "scorecard", "diagnostic", "diagnostics", "tolerance", "clearance" },
+                new[] { "report", "review", "issue", "issues", "error", "errors", "missing", "duplicate", "duplicates", "overlap", "overlapping", "unconnected", "unhosted", "orphaned", "nonstandard", "rule", "rules", "policy", "governance", "approved", "fire rating", "code", "ada", "egress", "occupancy", "count", "summary", "metrics", "kpi", "dashboard", "tracker", "monitor" }
+            );
+
+            // 4. Model Maintenance (purging, cleanup, worksets, CAD imports, compacting, file size, performance)
+            ScoreKeywords("Model Maintenance",
+                new[] { "purge", "cleanup", "clean", "cleaner", "maintenance", "hygiene", "unused", "unplaced", "redundant", "workset", "worksets", "compact", "cad", "dwg import", "imported", "imports", "in place", "inplace", "temp", "temporary", "backup", "backups", "detach", "upgrade", "upgrader", "migrate", "migration", "delete", "remove", "eraser", "wipe", "reset", "overkill", "shrink", "optimize file" },
+                new[] { "size", "performance", "speed", "slow", "memory", "ram", "cache", "journal", "journals", "log", "logs", "family size", "subcategory", "subcategories", "line style", "line styles", "linetype", "fill pattern", "fill patterns", "material", "materials", "asset", "assets", "raster", "image", "images", "unpin", "pin", "pinned", "group", "groups", "ungroup", "design option", "design options" }
+            );
+
+            // 5. Collaboration (links, coordination, clash detection, BIM 360 / ACC, IFC, Navisworks, BCF, worksharing sync)
+            ScoreKeywords("Collaboration",
+                new[] { "clash", "clashes", "interference", "coord", "coordination", "collaborate", "collaboration", "bim360", "bim 360", "acc", "autodesk construction cloud", "sharepoint", "speckle", "revizto", "navisworks", "nwc", "nwd", "ifc", "bcf", "cobie", "link", "links", "linked", "repath", "reload", "worksharing", "central", "synchronize", "sync", "transmit", "etransmit", "transmittal", "publish", "cloud", "shared coordinates", "survey point", "project base point", "copy monitor", "acquire coordinates", "publish coordinates" },
+                new[] { "exchange", "interoperability", "import", "export", "bridge", "connector", "webhook", "slack", "teams", "email", "notify", "notification", "permission", "permissions", "ownership", "borrow", "borrowed", "relinquish", "consultant", "consultants", "federated", "federation", "package", "packaging", "handover", "issue tracker" }
+            );
+
+            // 6. Documentation (dimensions, tags, sheets, views, schedules, legends, keynotes, numbering, annotations, PDF/DWG print)
+            ScoreKeywords("Documentation",
+                new[] { "dim", "dims", "autodim", "dimension", "dimensions", "dimensioning", "tag", "tags", "tagging", "untagged", "sheet", "sheets", "titleblock", "titleblocks", "viewport", "viewports", "schedule", "schedules", "legend", "legends", "keynote", "keynotes", "revision", "revisions", "cloud", "callout", "callouts", "section", "sections", "detail", "details", "drafting", "annotation", "annotations", "text", "note", "notes", "symbol", "symbols", "renumber", "renumbering", "numbering", "print", "printer", "pdf", "dwf", "plot" },
+                new[] { "view", "views", "plan", "plans", "rcp", "crop", "scope box", "scope", "template", "templates", "filter", "filters", "override", "overrides", "graphic", "graphics", "halftone", "underlay", "phase", "phasing", "mark", "marks", "parameter", "parameters", "shared parameter", "excel", "csv", "table", "door number", "room number", "room tag", "area plan", "color scheme", "spell", "spelling", "case", "uppercase", "find replace", "prefix", "suffix" }
+            );
+
+            // Engine-specific boost: Grasshopper scripts are inherently Computational unless strongly tagged otherwise
+            if (string.Equals(actionType, "Grasshopper", StringComparison.OrdinalIgnoreCase))
+            {
+                scores["Computational"] += 6;
+            }
+
+            // Pick highest-scoring category
+            string bestCategory = null;
+            int bestScore = 0;
+            foreach (var cat in CanonicalCategories)
+            {
+                if (scores.TryGetValue(cat, out int sc) && sc > bestScore)
+                {
+                    bestScore = sc;
+                    bestCategory = cat;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(bestCategory) && bestScore > 0)
+                return bestCategory;
+
+            // Sensible fallback based on engine type rather than dumping everything into Documentation
+            if (string.Equals(actionType, "Grasshopper", StringComparison.OrdinalIgnoreCase))
+                return "Computational";
+            if (string.Equals(actionType, "NativeAddin", StringComparison.OrdinalIgnoreCase))
                 return "Modeling";
 
-            // Computational
-            if (Regex.IsMatch(lower, @"\b(computational|parametric|algorithm|voronoi|attractor|mesh|panel|paneling|generative|math|pattern|solar|analysis)\b", RegexOptions.IgnoreCase))
-                return "Computational";
-
-            return "Documentation";
+            return "Modeling";
         }
     }
 }

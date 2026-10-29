@@ -234,12 +234,24 @@ namespace BIMCommandCenter.Core.Revit
             // Step 1 & Step 3: Direct Execution with Parameter Injection!
             // Supports both headless injection and native Data-Shapes dialog popup!
             bool runNativeUi = userInputs != null && userInputs.ContainsKey("__run_native_ui__");
+            try
+            {
+                var graphInfo = DynamoPackageInspector.InspectGraph(dynPath);
+                if (graphInfo != null && graphInfo.HasDataShapesForm)
+                {
+                    // Data-Shapes UI.MultipleInputForm++ requires non-headless Dynamo evaluation so its IronPython WinForms dialog
+                    // and multi-output ports (User Inputs, Was Run, Was Cancelled) execute natively.
+                    runNativeUi = true;
+                }
+            }
+            catch { }
+
             string pathToExecute = dynPath;
             bool isTemp = false;
 
-            if (userInputs != null && userInputs.Count > 0)
+            if ((userInputs != null && userInputs.Count > 0) || runNativeUi)
             {
-                string temp = DynamoPackageInspector.CreateTempGraphWithInputs(dynPath, userInputs);
+                string temp = DynamoPackageInspector.CreateTempGraphWithInputs(dynPath, userInputs ?? new Dictionary<string, string>());
                 if (!string.IsNullOrEmpty(temp) && temp != dynPath && File.Exists(temp))
                 {
                     pathToExecute = temp;
@@ -307,17 +319,16 @@ namespace BIMCommandCenter.Core.Revit
                 Log.Write("EnsureFolderInDynamoSettings failed: " + ex.Message);
             }
 
-            // 1. If Dynamo Player is ALREADY running and listening on localhost:
-            // Do NOT call PostCommand (which would toggle it closed!). Instead, send the graph open request directly!
-            int existingPort = DynamoPlayerHelper.FindActivePlayerServerPort();
-            if (existingPort > 0)
+            // 1. Only skip launching if the actual "Dynamo Player" top-level window is currently open & visible on screen.
+            if (DynamoPlayerHelper.IsDynamoPlayerWindowOpen(out IntPtr playerHwnd))
             {
-                Log.Write($"Dynamo Player is already active on port {existingPort}. Sending graph open request.");
+                Log.Write("Dynamo Player window is already open. Bringing to front and sending graph open request.");
+                DynamoPlayerHelper.BringWindowToFront(playerHwnd);
                 _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
                 return RunResult.Success($"Dynamo Player is open. Loaded \"{Path.GetFileName(dynPath)}\".");
             }
 
-            // 2. Transfer window focus to Revit main window so Revit 2025 (.NET 8) allows command execution
+            // 2. Transfer window focus to Revit main window so Revit 2025/2026 (.NET 8) allows command execution
             if (app != null && app.MainWindowHandle != IntPtr.Zero)
             {
                 try
@@ -328,7 +339,26 @@ namespace BIMCommandCenter.Core.Revit
                 catch { }
             }
 
-            // 3. Try standard Revit command IDs
+            // 3. Try PostableCommand.DynamoPlayer first
+            if (Enum.TryParse("DynamoPlayer", true, out PostableCommand dpPostable))
+            {
+                try
+                {
+                    RevitCommandId postableId = RevitCommandId.LookupPostableCommandId(dpPostable);
+                    if (postableId != null && app.CanPostCommand(postableId))
+                    {
+                        app.PostCommand(postableId);
+                        _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
+                        return RunResult.Success($"Opened Dynamo Player for \"{Path.GetFileName(dynPath)}\".");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("PostableCommand.DynamoPlayer failed: " + ex.Message);
+                }
+            }
+
+            // 4. Try standard Revit command IDs
             string[] candidateIds = new[]
             {
                 "ID_PLAYLIST_DYNAMO",
@@ -358,7 +388,7 @@ namespace BIMCommandCenter.Core.Revit
                 }
             }
 
-            // 4. Fallback: ComponentManager direct ribbon execution (bypasses CanPostCommand WebView2 focus restrictions)
+            // 5. Fallback: ComponentManager direct ribbon execution (traverses SplitButtons & bypasses WebView2 focus restrictions)
             if (DynamoPlayerHelper.TryInvokeRibbonDynamoPlayer())
             {
                 _ = Task.Run(() => DynamoPlayerHelper.TryOpenGraphInDynamoPlayerAsync(dynPath));
@@ -658,6 +688,17 @@ namespace BIMCommandCenter.Core.Revit
                             string asmName = new AssemblyName(args.Name).Name;
                             if (string.IsNullOrEmpty(asmName)) return null;
 
+                            // 1. Check if already loaded in AppDomain to prevent "Assembly with same name is already loaded" in .NET 8
+                            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
+                            {
+                                try
+                                {
+                                    if (!loaded.IsDynamic && string.Equals(loaded.GetName().Name, asmName, StringComparison.OrdinalIgnoreCase))
+                                        return loaded;
+                                }
+                                catch { }
+                            }
+
                             lock (RegisteredProbeDirectories)
                             {
                                 foreach (var probeDir in RegisteredProbeDirectories)
@@ -665,7 +706,7 @@ namespace BIMCommandCenter.Core.Revit
                                     string candidate = Path.Combine(probeDir, asmName + ".dll");
                                     if (File.Exists(candidate))
                                     {
-                                        return Assembly.LoadFrom(candidate);
+                                        return LoadAssemblySafely(candidate);
                                     }
                                 }
                             }
@@ -673,6 +714,81 @@ namespace BIMCommandCenter.Core.Revit
                         catch { }
                         return null;
                     };
+                }
+            }
+        }
+
+        /// <summary>
+        /// Loads a .NET assembly from disk without throwing "Assembly with same name is already loaded"
+        /// when the add-in or dependency is already loaded in Revit's AppDomain (e.g. Revit 2025/2026 .NET 8 ALC).
+        /// Works seamlessly whether the user has the add-in locally installed in Revit or is running zero-install from the central folder.
+        /// </summary>
+        internal static Assembly LoadAssemblySafely(string dllPath)
+        {
+            if (string.IsNullOrWhiteSpace(dllPath) || !File.Exists(dllPath))
+                return null;
+
+            string fullPath = Path.GetFullPath(dllPath);
+            string targetSimpleName = Path.GetFileNameWithoutExtension(fullPath);
+            try
+            {
+                var defName = AssemblyName.GetAssemblyName(fullPath);
+                if (!string.IsNullOrEmpty(defName?.Name))
+                    targetSimpleName = defName.Name;
+            }
+            catch { }
+
+            Assembly matchedByName = null;
+            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    if (loaded.IsDynamic) continue;
+                    if (!string.IsNullOrEmpty(loaded.Location) &&
+                        string.Equals(Path.GetFullPath(loaded.Location), fullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return loaded;
+                    }
+                    if (matchedByName == null &&
+                        string.Equals(loaded.GetName().Name, targetSimpleName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedByName = loaded;
+                    }
+                }
+                catch { }
+            }
+
+            // If an assembly with the exact same AssemblyName is already loaded in Revit (either from local Addins or a prior run),
+            // reuse it directly so .NET 8 AssemblyLoadContext.Default does not throw FileLoadException("Assembly with same name is already loaded").
+            if (matchedByName != null)
+            {
+                return matchedByName;
+            }
+
+            try
+            {
+                return Assembly.LoadFrom(fullPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"LoadAssemblySafely: LoadFrom({fullPath}) threw {ex.GetType().Name}: {ex.Message}. Attempting fallback.");
+                foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    try
+                    {
+                        if (!loaded.IsDynamic && string.Equals(loaded.GetName().Name, targetSimpleName, StringComparison.OrdinalIgnoreCase))
+                            return loaded;
+                    }
+                    catch { }
+                }
+
+                try
+                {
+                    return Assembly.Load(File.ReadAllBytes(fullPath));
+                }
+                catch
+                {
+                    throw;
                 }
             }
         }
@@ -765,7 +881,11 @@ namespace BIMCommandCenter.Core.Revit
                 string dir = Path.GetDirectoryName(dllPath);
                 EnsureAssemblyResolver(dir);
 
-                Assembly asm = Assembly.LoadFrom(dllPath);
+                Assembly asm = LoadAssemblySafely(dllPath);
+                if (asm == null)
+                {
+                    return RunResult.Fail("Could not load assembly: " + Path.GetFileName(dllPath));
+                }
 
                 // 1. Check if it's BIMHealthCheck engine
                 Type healthCheckType = asm.GetType("BIMHealthCheck.Engine.HealthCheckEngine");
@@ -784,25 +904,34 @@ namespace BIMCommandCenter.Core.Revit
                 Type cmdType = null;
                 if (!string.IsNullOrWhiteSpace(commandClassName))
                 {
-                    cmdType = asm.GetType(commandClassName, false, true);
+                    var candidate = asm.GetType(commandClassName, false, true);
+                    if (candidate != null && typeof(IExternalCommand).IsAssignableFrom(candidate) && !candidate.IsAbstract && !candidate.IsInterface)
+                    {
+                        cmdType = candidate;
+                    }
                 }
 
                 if (cmdType == null)
                 {
-                    // Check companion .addin file if not explicitly specified
+                    // Check companion .addin file if not explicitly specified (only match IExternalCommand, not IExternalApplication)
                     string[] addinFiles = Directory.GetFiles(dir, "*.addin");
                     foreach (var af in addinFiles)
                     {
                         try
                         {
                             string xml = File.ReadAllText(af);
-                            var match = System.Text.RegularExpressions.Regex.Match(xml, @"<FullClassName>\s*([a-zA-Z0-9_\.]+)\s*</FullClassName>");
-                            if (match.Success)
+                            var matches = Regex.Matches(xml, @"<FullClassName>\s*([a-zA-Z0-9_\.]+)\s*</FullClassName>");
+                            foreach (Match match in matches)
                             {
                                 string candidateClassName = match.Groups[1].Value.Trim();
-                                cmdType = asm.GetType(candidateClassName, false, true);
-                                if (cmdType != null) break;
+                                var candidate = asm.GetType(candidateClassName, false, true);
+                                if (candidate != null && typeof(IExternalCommand).IsAssignableFrom(candidate) && !candidate.IsAbstract && !candidate.IsInterface)
+                                {
+                                    cmdType = candidate;
+                                    break;
+                                }
                             }
+                            if (cmdType != null) break;
                         }
                         catch { }
                     }
@@ -813,28 +942,75 @@ namespace BIMCommandCenter.Core.Revit
                     try
                     {
                         var types = asm.GetTypes();
-                        cmdType = types.FirstOrDefault(t => 
-                            typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
+                        string baseName = Path.GetFileNameWithoutExtension(dllPath);
+
+                        // Prefer an IExternalCommand whose name matches the DLL or title, or any IExternalCommand in the assembly
+                        cmdType = types.FirstOrDefault(t =>
+                            t != null && typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface &&
+                            (t.Name.IndexOf(baseName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             t.Name.Equals("Command", StringComparison.OrdinalIgnoreCase)))
+                            ?? types.FirstOrDefault(t =>
+                                t != null && typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
 
                         if (cmdType == null)
                         {
-                            string baseName = Path.GetFileNameWithoutExtension(dllPath);
-                            cmdType = types.FirstOrDefault(t => 
+                            cmdType = types.FirstOrDefault(t =>
+                                t != null &&
                                 (t.Name.Equals(baseName, StringComparison.OrdinalIgnoreCase) ||
                                  t.Name.Equals("Command", StringComparison.OrdinalIgnoreCase) ||
                                  t.Name.EndsWith("Command", StringComparison.OrdinalIgnoreCase)) &&
+                                !typeof(IExternalApplication).IsAssignableFrom(t) &&
                                 !t.IsAbstract && !t.IsInterface);
                         }
                     }
                     catch (ReflectionTypeLoadException rtle)
                     {
-                        cmdType = rtle.Types.FirstOrDefault(t => 
+                        cmdType = rtle.Types.FirstOrDefault(t =>
                             t != null && typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
+                    }
+                }
+
+                // If no IExternalCommand was found in this DLL (or if it is purely an IExternalApplication wrapper),
+                // check sibling DLLs in the same folder or invoke its registered Ribbon command!
+                if (cmdType == null)
+                {
+                    foreach (var siblingDll in Directory.GetFiles(dir, "*.dll"))
+                    {
+                        if (string.Equals(Path.GetFullPath(siblingDll), Path.GetFullPath(dllPath), StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        string sName = Path.GetFileName(siblingDll);
+                        if (sName.StartsWith("RevitAPI", StringComparison.OrdinalIgnoreCase) ||
+                            sName.StartsWith("System.", StringComparison.OrdinalIgnoreCase) ||
+                            sName.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase) ||
+                            sName.StartsWith("Newtonsoft.", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        try
+                        {
+                            Assembly sibAsm = LoadAssemblySafely(siblingDll);
+                            var sibTypes = sibAsm?.GetTypes();
+                            if (sibTypes != null)
+                            {
+                                cmdType = sibTypes.FirstOrDefault(t =>
+                                    t != null && typeof(IExternalCommand).IsAssignableFrom(t) && !t.IsAbstract && !t.IsInterface);
+                                if (cmdType != null)
+                                {
+                                    asm = sibAsm;
+                                    break;
+                                }
+                            }
+                        }
+                        catch { }
                     }
                 }
 
                 if (cmdType == null)
                 {
+                    string ribbonId = FindRibbonCommandId(Path.GetFileNameWithoutExtension(dllPath), title);
+                    if (!string.IsNullOrEmpty(ribbonId))
+                    {
+                        return RunRibbonCommand(app, ribbonId, title);
+                    }
+
                     return RunResult.Fail("Could not locate IExternalCommand entry point in " + Path.GetFileName(dllPath) +
                         ".\nEnsure the C# class implements Autodesk.Revit.UI.IExternalCommand.");
                 }
@@ -885,6 +1061,15 @@ namespace BIMCommandCenter.Core.Revit
             {
                 Exception inner = ex.InnerException ?? ex;
                 Log.Write("RunAssemblyCommand error: " + inner);
+
+                // Fallback: if reflection execution failed because the add-in is already loaded in Revit's Ribbon, trigger its Ribbon Command directly
+                string ribbonId = FindRibbonCommandId(Path.GetFileNameWithoutExtension(dllPath), title);
+                if (!string.IsNullOrEmpty(ribbonId))
+                {
+                    var ribRes = RunRibbonCommand(app, ribbonId, title);
+                    if (ribRes != null && ribRes.Ok) return ribRes;
+                }
+
                 return RunResult.Fail("Error executing " + title + ": " + inner.Message);
             }
         }

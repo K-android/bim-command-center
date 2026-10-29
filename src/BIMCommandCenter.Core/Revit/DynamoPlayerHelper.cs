@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
@@ -16,6 +17,47 @@ namespace BIMCommandCenter.Core.Revit
 {
     public static class DynamoPlayerHelper
     {
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        /// <summary>
+        /// Checks whether an actual visible "Dynamo Player" top-level window is currently open on screen.
+        /// </summary>
+        public static bool IsDynamoPlayerWindowOpen(out IntPtr playerHwnd)
+        {
+            playerHwnd = IntPtr.Zero;
+            try
+            {
+                IntPtr hwnd = FindWindow(null, "Dynamo Player");
+                if (hwnd != IntPtr.Zero && IsWindowVisible(hwnd))
+                {
+                    playerHwnd = hwnd;
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        public static void BringWindowToFront(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                ShowWindow(hwnd, 9); // SW_RESTORE
+                SetForegroundWindow(hwnd);
+            }
+            catch { }
+        }
         /// <summary>
         /// Registers a directory in DynamoSettings.xml under both DynamoPlayerFolderGroups
         /// AND TrustedFolderLocations (Dynamo 3.x in Revit 2025) across all installed Dynamo Revit
@@ -250,12 +292,13 @@ namespace BIMCommandCenter.Core.Revit
         }
 
         /// <summary>
-        /// Finds the active HTTP port that Dynamo Player's in-process server is listening on.
-        /// Searches across loaded DynamoPlayer assemblies, active TCP listeners on loopback,
-        /// and fallback port ranges.
+        /// Returns candidate HTTP ports that Dynamo Player's in-process server may be listening on.
+        /// Searches loaded DynamoPlayer assemblies first, then active loopback TCP listeners in the 55000-55500 range.
         /// </summary>
-        public static int FindActivePlayerServerPort()
+        public static List<int> GetCandidatePlayerPorts()
         {
+            var ports = new List<int>();
+
             // 1. In-process reflection via DynamoPlayer assemblies
             try
             {
@@ -274,7 +317,7 @@ namespace BIMCommandCenter.Core.Revit
                                     if (prop.PropertyType == typeof(int) && prop.Name.IndexOf("Port", StringComparison.OrdinalIgnoreCase) >= 0)
                                     {
                                         int p = (int)prop.GetValue(null);
-                                        if (p > 0 && IsPortListening(p)) return p;
+                                        if (p > 0 && !ports.Contains(p) && IsPortListening(p)) ports.Add(p);
                                     }
                                 }
                                 foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
@@ -282,7 +325,7 @@ namespace BIMCommandCenter.Core.Revit
                                     if (field.FieldType == typeof(int) && field.Name.IndexOf("port", StringComparison.OrdinalIgnoreCase) >= 0)
                                     {
                                         int p = (int)field.GetValue(null);
-                                        if (p > 0 && IsPortListening(p)) return p;
+                                        if (p > 0 && !ports.Contains(p) && IsPortListening(p)) ports.Add(p);
                                     }
                                     if (typeof(IEnumerable).IsAssignableFrom(field.FieldType))
                                     {
@@ -293,8 +336,8 @@ namespace BIMCommandCenter.Core.Revit
                                             {
                                                 if (s == null) continue;
                                                 var pPort = s.GetType().GetProperty("Port")?.GetValue(s) as int?;
-                                                if (pPort.HasValue && pPort.Value > 0 && IsPortListening(pPort.Value))
-                                                    return pPort.Value;
+                                                if (pPort.HasValue && pPort.Value > 0 && !ports.Contains(pPort.Value) && IsPortListening(pPort.Value))
+                                                    ports.Add(pPort.Value);
                                             }
                                         }
                                     }
@@ -309,27 +352,28 @@ namespace BIMCommandCenter.Core.Revit
                 Log.Write("DynamoPlayerHelper: Port reflection check exception: " + ex.Message);
             }
 
-            // 2. Scan active TCP listeners in system (standard .NET System.Net.NetworkInformation)
+            // 2. Active loopback listeners in Dynamo Player's dedicated port range (55000..55500)
             try
             {
                 var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners();
                 foreach (var ep in listeners)
                 {
-                    if (IPAddress.IsLoopback(ep.Address) && ep.Port >= 50000 && ep.Port <= 60000)
+                    if (IPAddress.IsLoopback(ep.Address) && ep.Port >= 55000 && ep.Port <= 55500)
                     {
-                        if (IsPortListening(ep.Port)) return ep.Port;
+                        if (!ports.Contains(ep.Port) && IsPortListening(ep.Port))
+                            ports.Add(ep.Port);
                     }
                 }
             }
             catch { }
 
-            // 3. Fallback: Quick scan of common Dynamo Player ports (55100-55135)
-            for (int p = 55100; p <= 55135; p++)
-            {
-                if (IsPortListening(p)) return p;
-            }
+            return ports;
+        }
 
-            return -1;
+        public static int FindActivePlayerServerPort()
+        {
+            var ports = GetCandidatePlayerPorts();
+            return ports.Count > 0 ? ports[0] : -1;
         }
 
         private static bool IsPortListening(int port)
@@ -351,7 +395,7 @@ namespace BIMCommandCenter.Core.Revit
 
         /// <summary>
         /// Attempts to invoke the Dynamo Player command directly via Revit's Ribbon ComponentManager.
-        /// Useful in Revit 2025 when focus is hosted in WebView2 and CanPostCommand is restrictive.
+        /// Recursively searches inside RibbonSplitButton / RibbonRowPanel items so ID_PLAYLIST_DYNAMO is found.
         /// </summary>
         public static bool TryInvokeRibbonDynamoPlayer()
         {
@@ -364,14 +408,6 @@ namespace BIMCommandCenter.Core.Revit
                         var tCompMgr = asm.GetType("Autodesk.Windows.ComponentManager");
                         if (tCompMgr != null)
                         {
-                            var mSend = tCompMgr.GetMethod("SendCommand", new[] { typeof(string) });
-                            if (mSend != null)
-                            {
-                                mSend.Invoke(null, new object[] { "ID_PLAYLIST_DYNAMO" });
-                                Log.Write("DynamoPlayerHelper: Successfully invoked ID_PLAYLIST_DYNAMO via ComponentManager.SendCommand");
-                                return true;
-                            }
-
                             var pRibbon = tCompMgr.GetProperty("Ribbon", BindingFlags.Public | BindingFlags.Static);
                             var ribbon = pRibbon?.GetValue(null);
                             if (ribbon != null)
@@ -394,35 +430,23 @@ namespace BIMCommandCenter.Core.Revit
                                                 {
                                                     var pItems = source.GetType().GetProperty("Items");
                                                     var items = pItems?.GetValue(source) as IEnumerable;
-                                                    if (items != null)
+                                                    if (items != null && TryExecuteDynamoPlayerInItems(items))
                                                     {
-                                                        foreach (var item in items)
-                                                        {
-                                                            string id = item.GetType().GetProperty("Id")?.GetValue(item) as string;
-                                                            string text = item.GetType().GetProperty("Text")?.GetValue(item) as string;
-                                                            if ((id != null && id.IndexOf("DynamoPlayer", StringComparison.OrdinalIgnoreCase) >= 0) ||
-                                                                (text != null && text.IndexOf("Dynamo Player", StringComparison.OrdinalIgnoreCase) >= 0))
-                                                            {
-                                                                var pHandler = item.GetType().GetProperty("CommandHandler");
-                                                                var handler = pHandler?.GetValue(item);
-                                                                if (handler != null)
-                                                                {
-                                                                    var mExec = handler.GetType().GetMethod("Execute", new[] { typeof(object) });
-                                                                    if (mExec != null)
-                                                                    {
-                                                                        mExec.Invoke(handler, new object[] { item });
-                                                                        Log.Write("DynamoPlayerHelper: Successfully executed Dynamo Player Ribbon Item CommandHandler");
-                                                                        return true;
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
+                                                        return true;
                                                     }
                                                 }
                                             }
                                         }
                                     }
                                 }
+                            }
+
+                            var mSend = tCompMgr.GetMethod("SendCommand", new[] { typeof(string) });
+                            if (mSend != null)
+                            {
+                                mSend.Invoke(null, new object[] { "ID_PLAYLIST_DYNAMO" });
+                                Log.Write("DynamoPlayerHelper: Successfully invoked ID_PLAYLIST_DYNAMO via ComponentManager.SendCommand");
+                                return true;
                             }
                         }
                     }
@@ -435,21 +459,70 @@ namespace BIMCommandCenter.Core.Revit
             return false;
         }
 
+        private static bool TryExecuteDynamoPlayerInItems(IEnumerable items)
+        {
+            foreach (var item in items)
+            {
+                if (item == null) continue;
+                var itemType = item.GetType();
+
+                string id = itemType.GetProperty("Id")?.GetValue(item) as string ?? "";
+                string text = itemType.GetProperty("Text")?.GetValue(item) as string ?? "";
+                string name = itemType.GetProperty("Name")?.GetValue(item) as string ?? "";
+
+                // Check nested Items first (e.g. RibbonSplitButton contains both Dynamo and Dynamo Player)
+                var pSubItems = itemType.GetProperty("Items");
+                if (pSubItems != null)
+                {
+                    var subItems = pSubItems.GetValue(item) as IEnumerable;
+                    if (subItems != null && TryExecuteDynamoPlayerInItems(subItems))
+                    {
+                        return true;
+                    }
+                }
+
+                // Match specifically Dynamo Player (not plain Dynamo)
+                bool isPlayer =
+                    string.Equals(id, "ID_PLAYLIST_DYNAMO", StringComparison.OrdinalIgnoreCase) ||
+                    id.IndexOf("PLAYLIST_DYNAMO", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    id.IndexOf("DynamoPlayer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    text.IndexOf("Dynamo Player", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("Dynamo Player", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (isPlayer)
+                {
+                    var pHandler = itemType.GetProperty("CommandHandler");
+                    var handler = pHandler?.GetValue(item);
+                    if (handler != null)
+                    {
+                        var mExec = handler.GetType().GetMethod("Execute", new[] { typeof(object) });
+                        if (mExec != null)
+                        {
+                            mExec.Invoke(handler, new object[] { item });
+                            Log.Write($"DynamoPlayerHelper: Executed Dynamo Player Ribbon Item CommandHandler (Id={id}, Text={text})");
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
         /// <summary>
         /// Asynchronously notifies Dynamo Player to directly open the specified graph in its Inputs/Outputs panel.
         /// Retries across multiple intervals as Dynamo Player initializes.
         /// </summary>
-        public static async Task<bool> TryOpenGraphInDynamoPlayerAsync(string dynPath, int maxAttempts = 35, int delayMs = 200)
+        public static async Task<bool> TryOpenGraphInDynamoPlayerAsync(string dynPath, int maxAttempts = 35, int delayMs = 250)
         {
             if (string.IsNullOrWhiteSpace(dynPath) || !File.Exists(dynPath)) return false;
             string fullPath = Path.GetFullPath(dynPath);
 
-            using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) })
+            using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1.5) })
             {
                 for (int attempt = 1; attempt <= maxAttempts; attempt++)
                 {
-                    int port = FindActivePlayerServerPort();
-                    if (port > 0)
+                    var candidatePorts = GetCandidatePlayerPorts();
+                    foreach (int port in candidatePorts)
                     {
                         try
                         {
@@ -463,15 +536,8 @@ namespace BIMCommandCenter.Core.Revit
                                 Log.Write($"DynamoPlayerHelper: Graph successfully opened on port {port} -> {fullPath}");
                                 return true;
                             }
-                            else
-                            {
-                                Log.Write($"DynamoPlayerHelper: Attempt {attempt} returned status {response.StatusCode}");
-                            }
                         }
-                        catch (Exception ex)
-                        {
-                            Log.Write($"DynamoPlayerHelper: PostGraphOpen attempt {attempt} on port {port} error: {ex.Message}");
-                        }
+                        catch { }
                     }
 
                     await Task.Delay(delayMs).ConfigureAwait(false);

@@ -28,46 +28,47 @@
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen flex flex-col overflow-hidden text-[13px] select-none">
 
-  <!-- TOP HEADER: brand + context on the left, compact icon actions on the right -->
-  <header class="bg-slate-900 text-white px-3 py-2 flex items-center justify-between gap-2 shrink-0">
-    <div class="flex items-center gap-2 min-w-0">
-      <div class="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center shrink-0">
-        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-white"></i>
-      </div>
-      <div class="min-w-0">
-        <div class="font-semibold text-xs leading-tight flex items-center gap-1.5">
-          <span>BIM Command Center</span>
+  <!-- TOP HEADER: 2-row layout so title and user badge never overlap in narrow dockable panes -->
+  <header class="bg-slate-900 text-white px-3 py-2 flex flex-col gap-1.5 shrink-0">
+    <div class="flex items-center justify-between gap-2 min-w-0">
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-6 h-6 bg-blue-600 rounded-md flex items-center justify-center shrink-0">
+          <i data-lucide="shield-check" class="w-3.5 h-3.5 text-white"></i>
         </div>
-        <div id="ctx-line" class="text-[10px] text-slate-400 truncate">Connecting to Revit…</div>
+        <span class="font-semibold text-xs leading-tight whitespace-nowrap truncate">BIM Command Center</span>
+      </div>
+
+      <div class="flex items-center gap-1 shrink-0">
+        <!-- Mini Medical '+' Icon Button for BIM Health Check -->
+        <button onclick="runBimHealthCheck()" id="btn-header-health" title="BIM Health Check: Audit model integrity, warnings, CAD imports &amp; health score"
+                class="w-6 h-6 rounded-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-400 border border-rose-500/40 flex items-center justify-center transition shrink-0 group" aria-label="BIM Health Check">
+          <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[2.75] text-rose-400 group-hover:scale-110 transition-transform"></i>
+        </button>
+
+        <button onclick="openRibbonModal()" title="Manage tools pinned to the Revit ribbon" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
+          <i data-lucide="pin" class="w-3.5 h-3.5"></i>
+          <span id="ribbon-badge-text">2</span>
+        </button>
+        <button onclick="openRegisterModal()" title="Register a script or add-in into Central Library" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+          <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="loadCatalog(true)" title="Refresh catalog" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        </button>
+        <button onclick="openSettingsModal()" title="Settings" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+        </button>
       </div>
     </div>
-    <div class="flex items-center gap-1 shrink-0">
+
+    <div class="flex items-center justify-between gap-2 min-w-0 pt-0.5 border-t border-slate-800/80">
+      <div id="ctx-line" class="text-[10px] text-slate-400 truncate flex-1 min-w-0">Connecting to Revit…</div>
       <!-- User Role & Discipline Badge Pill -->
-      <div id="user-badge" onclick="confirmLogout()" title="Click to switch user or sign out" class="hidden cursor-pointer bg-slate-800 hover:bg-slate-700/90 border border-slate-700/80 px-2 py-1 rounded-md text-[11px] font-medium text-slate-200 flex items-center gap-1.5 transition">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
-        <span id="user-badge-text" class="font-semibold text-slate-100 max-w-[150px] truncate">User</span>
+      <div id="user-badge" onclick="confirmLogout()" title="Click to switch user or sign out" class="hidden cursor-pointer bg-slate-800 hover:bg-slate-700/90 border border-slate-700/80 px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-200 flex items-center gap-1.5 shrink-0 max-w-[190px] transition">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+        <span id="user-badge-text" class="font-semibold text-slate-100 truncate">User</span>
         <i data-lucide="log-out" class="w-3 h-3 text-slate-400 hover:text-rose-400 shrink-0 ml-0.5"></i>
       </div>
-
-      <!-- Mini Medical '+' Icon Button for BIM Health Check -->
-      <button onclick="runBimHealthCheck()" id="btn-header-health" title="BIM Health Check: Audit model integrity, warnings, CAD imports &amp; health score"
-              class="w-6 h-6 rounded-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-400 border border-rose-500/40 flex items-center justify-center transition shrink-0 group" aria-label="BIM Health Check">
-        <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[2.75] text-rose-400 group-hover:scale-110 transition-transform"></i>
-      </button>
-
-      <button onclick="openRibbonModal()" title="Manage tools pinned to the Revit ribbon" class="text-[11px] font-medium text-slate-200 hover:bg-slate-800 px-2 py-1 rounded-md flex items-center gap-1 transition">
-        <i data-lucide="pin" class="w-3.5 h-3.5"></i>
-        <span id="ribbon-badge-text">2</span>
-      </button>
-      <button onclick="openRegisterModal()" title="Register a script or add-in into Central Library" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
-        <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
-      </button>
-      <button onclick="loadCatalog(true)" title="Refresh catalog" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
-        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-      </button>
-      <button onclick="openSettingsModal()" title="Settings" class="text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition">
-        <i data-lucide="settings" class="w-3.5 h-3.5"></i>
-      </button>
     </div>
   </header>
 
@@ -1185,6 +1186,30 @@ function updateAiBadge() {
 // ======================================================================
 //  Category Definitions & Radial Grid System
 // ======================================================================
+function resolveCanonicalCategory(t) {
+  if (!t) return 'Modeling';
+  const raw = (t.category || '').trim().toLowerCase();
+  if (raw === 'documentation' || raw === 'documentation & sheets' || raw === 'docs' || raw === 'annotations') return 'Documentation';
+  if (raw === 'modeling' || raw === 'modeling & geometry' || raw === 'geometry') return 'Modeling';
+  if (raw === 'computational' || raw === 'computational design' || raw === 'parametric') return 'Computational';
+  if (raw === 'quality & qa' || raw === 'quality' || raw === 'qa' || raw === 'qc' || raw === 'audit') return 'Quality & QA';
+  if (raw === 'model maintenance' || raw === 'maintenance' || raw === 'hygiene' || raw === 'cleanup') return 'Model Maintenance';
+  if (raw === 'collaboration' || raw === 'project setup & standards' || raw === 'collaboration & setup' || raw === 'coordination') return 'Collaboration';
+
+  // Fallback keyword scoring if a cached or custom tool has a non-standard folder name as its category
+  const text = ` ${[t.title, t.name, t.description, t.category, ...(t.tags || []), ...(t.keywords || [])].join(' ')} `
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .toLowerCase();
+
+  if (/\b(audit|health|check|checker|qa|qc|warning|warnings|compliance|validate|validation|standard|standards|inspect|verify)\b/.test(text)) return 'Quality & QA';
+  if (/\b(purge|cleanup|clean|maintenance|hygiene|unused|unplaced|redundant|workset|worksets|compact|cad|import|imports|delete|remove|upgrade)\b/.test(text)) return 'Model Maintenance';
+  if (/\b(clash|clashes|interference|coord|coordination|collaborate|collaboration|bim360|acc|sharepoint|speckle|revizto|navisworks|nwc|ifc|bcf|link|links|sync|synchronize|transmit|shared coordinates)\b/.test(text)) return 'Collaboration';
+  if (/\b(computational|parametric|generative|grasshopper|rhino|voronoi|attractor|paneling|diagrid|truss|solar|radiation|daylight|voxel|nurbs|surface|mesh|adaptive|mass|facade|algorithm|pattern)\b/.test(text) || t.actionType === 'Grasshopper') return 'Computational';
+  if (/\b(dim|dims|autodim|dimension|dimensions|tag|tags|sheet|sheets|titleblock|viewport|schedule|schedules|legend|keynote|revision|callout|section|detail|annotation|text|note|renumber|numbering|print|pdf|view|views|mark)\b/.test(text)) return 'Documentation';
+  return 'Modeling';
+}
+
 const CATEGORY_DEFINITIONS = [
   {
     id: 'Documentation',
@@ -1197,7 +1222,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-blue-50',
     pillText: 'text-blue-700',
     borderHover: 'hover:border-blue-400',
-    match: (t) => t.category === 'Documentation' || t.category === 'Documentation & Sheets' || (t.tags && (t.tags.includes('documentation') || t.tags.includes('doors') || t.tags.includes('dim') || t.tags.includes('sheet')))
+    match: (t) => resolveCanonicalCategory(t) === 'Documentation'
   },
   {
     id: 'Modeling',
@@ -1210,7 +1235,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-indigo-50',
     pillText: 'text-indigo-700',
     borderHover: 'hover:border-indigo-400',
-    match: (t) => t.category === 'Modeling' || t.category === 'Modeling & Geometry' || (t.tags && (t.tags.includes('modeling') || t.tags.includes('geometry') || t.tags.includes('walls') || t.tags.includes('floors')))
+    match: (t) => resolveCanonicalCategory(t) === 'Modeling'
   },
   {
     id: 'Computational',
@@ -1223,7 +1248,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-purple-50',
     pillText: 'text-purple-700',
     borderHover: 'hover:border-purple-400',
-    match: (t) => t.category === 'Computational' || (t.category === 'Central Library' && (t.actionType === 'Grasshopper' || t.actionType === 'Rhino.Inside')) || (t.tags && (t.tags.includes('computational') || t.tags.includes('algorithm') || t.tags.includes('parametric')))
+    match: (t) => resolveCanonicalCategory(t) === 'Computational'
   },
   {
     id: 'Quality',
@@ -1236,7 +1261,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-emerald-50',
     pillText: 'text-emerald-700',
     borderHover: 'hover:border-emerald-400',
-    match: (t) => t.category === 'Quality & QA' || t.category === 'Quality' || (t.tags && (t.tags.includes('audit') || t.tags.includes('health') || t.tags.includes('qa')))
+    match: (t) => resolveCanonicalCategory(t) === 'Quality & QA'
   },
   {
     id: 'Maintenance',
@@ -1249,7 +1274,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-amber-50',
     pillText: 'text-amber-700',
     borderHover: 'hover:border-amber-400',
-    match: (t) => t.category === 'Model Maintenance' || (t.tags && (t.tags.includes('maintenance') || t.tags.includes('rooms') || t.tags.includes('cad')))
+    match: (t) => resolveCanonicalCategory(t) === 'Model Maintenance'
   },
   {
     id: 'Collaboration',
@@ -1262,7 +1287,7 @@ const CATEGORY_DEFINITIONS = [
     pillBg: 'bg-sky-50',
     pillText: 'text-sky-700',
     borderHover: 'hover:border-sky-400',
-    match: (t) => t.category === 'Project Setup & Standards' || t.category === 'Collaboration' || (t.tags && t.tags.includes('sync'))
+    match: (t) => resolveCanonicalCategory(t) === 'Collaboration'
   },
   {
     id: 'All',
@@ -1282,55 +1307,9 @@ const CATEGORY_DEFINITIONS = [
 let currentSelectedCategory = null; // null = Homepage Grid, 'Documentation' | 'Computational' etc. = Library view
 
 function getActiveCategories() {
-  const result = [];
-  const added = new Set();
-
-  CATEGORY_DEFINITIONS.filter(c => c.id !== 'All').forEach(cat => {
-    result.push(cat);
-    added.add(cat.id.toLowerCase());
-    added.add(cat.title.toLowerCase());
-  });
-
-  const palette = [
-    { radialBg: 'bg-indigo-500', iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700', pillBg: 'bg-indigo-50', pillText: 'text-indigo-700', borderHover: 'hover:border-indigo-400', icon: 'folder-git-2' },
-    { radialBg: 'bg-teal-500', iconBg: 'bg-teal-100', iconColor: 'text-teal-700', pillBg: 'bg-teal-50', pillText: 'text-teal-700', borderHover: 'hover:border-teal-400', icon: 'layers' },
-    { radialBg: 'bg-rose-500', iconBg: 'bg-rose-100', iconColor: 'text-rose-700', pillBg: 'bg-rose-50', pillText: 'text-rose-700', borderHover: 'hover:border-rose-400', icon: 'sparkles' },
-    { radialBg: 'bg-cyan-500', iconBg: 'bg-cyan-100', iconColor: 'text-cyan-700', pillBg: 'bg-cyan-50', pillText: 'text-cyan-700', borderHover: 'hover:border-cyan-400', icon: 'box' }
-  ];
-
-  let pIdx = 0;
-  const customCats = new Set();
-  tools.forEach(t => {
-    if (t.toolId !== 'bim-health-check' && t.category && t.category !== 'Central Library') {
-      customCats.add(t.category);
-    }
-  });
-
-  customCats.forEach(catName => {
-    if (!added.has(catName.toLowerCase())) {
-      const style = palette[pIdx % palette.length];
-      pIdx++;
-      result.push({
-        id: catName,
-        title: catName,
-        subtitle: `Central category (${catName})`,
-        icon: style.icon,
-        radialBg: style.radialBg,
-        iconBg: style.iconBg,
-        iconColor: style.iconColor,
-        pillBg: style.pillBg,
-        pillText: style.pillText,
-        borderHover: style.borderHover,
-        match: (t) => (t.category || '').toLowerCase() === catName.toLowerCase()
-      });
-      added.add(catName.toLowerCase());
-    }
-  });
-
-  const allPreset = CATEGORY_DEFINITIONS.find(c => c.id === 'All');
-  if (allPreset) result.push(allPreset);
-
-  return result;
+  // Always return the 6 canonical BIM domain categories + All Automations
+  // (Never create separate cards for add-in folder names or .pushbutton folders)
+  return CATEGORY_DEFINITIONS.slice();
 }
 
 function renderCategoryGrid() {

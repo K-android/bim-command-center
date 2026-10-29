@@ -274,52 +274,121 @@ namespace BIMCommandCenter.Core.Revit
                     }
                 }
 
-                // 5. Track feeder nodes (e.g. String or CodeBlock nodes that only feed into a Data-Shapes input port)
-                // so we don't duplicate them as separate inputs in the UI.
+                // 5. Track feeder nodes (all upstream ancestor nodes that feed into any Data-Shapes UI widget or MultipleInputForm)
+                // so we never duplicate internal constants, labels, keys, values, or toggles as separate inputs in the UI.
                 var feederNodeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var dsOrderMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var bfsQueue = new Queue<Dictionary<string, object>>();
 
-                // Pre-scan to identify Data-Shapes UI nodes and their feeder source nodes
-                foreach (var n in nodeList.OfType<Dictionary<string, object>>())
+                bool IsDataShapesNode(Dictionary<string, object> n)
                 {
+                    if (n == null) return false;
                     string nid = n.Str("Id");
                     var nv = (nid != null && nodeViewsById.TryGetValue(nid, out var v)) ? v : null;
                     string nName = n.Str("Name") ?? nv?.Str("Name") ?? n.Str("FunctionSymbol") ?? "";
                     string fsym = n.Str("FunctionSymbol") ?? "";
                     string fsig = n.Str("FunctionSignature") ?? "";
                     string ctype = n.Str("ConcreteType") ?? "";
-
                     string comb = $"{nName} {fsym} {fsig} {ctype}".ToLowerInvariant();
-                    bool isDs = (nid != null && dataShapesNodeIds.Contains(nid)) || comb.Contains("data-shapes") || comb.Contains("ui.");
+                    return (nid != null && dataShapesNodeIds.Contains(nid)) ||
+                           comb.Contains("data-shapes") ||
+                           nName.StartsWith("UI.", StringComparison.OrdinalIgnoreCase) ||
+                           fsym.StartsWith("UI.", StringComparison.OrdinalIgnoreCase);
+                }
 
-                    if (isDs)
+                // Pre-scan to identify Data-Shapes UI nodes, MultipleInputForm++, and widget order
+                foreach (var n in nodeList.OfType<Dictionary<string, object>>())
+                {
+                    if (!IsDataShapesNode(n)) continue;
+
+                    string nid = n.Str("Id");
+                    var nv = (nid != null && nodeViewsById.TryGetValue(nid, out var v)) ? v : null;
+                    string nName = n.Str("Name") ?? nv?.Str("Name") ?? n.Str("FunctionSymbol") ?? "";
+                    string fsym = n.Str("FunctionSymbol") ?? "";
+                    string fsig = n.Str("FunctionSignature") ?? "";
+                    string ctype = n.Str("ConcreteType") ?? "";
+                    string comb = $"{nName} {fsym} {fsig} {ctype}".ToLowerInvariant();
+
+                    if (comb.Contains("multipleinputform") || comb.Contains("multiple input form"))
                     {
-                        if (comb.Contains("multipleinputform") || comb.Contains("multiple input form"))
+                        details.HasDataShapesForm = true;
+
+                        // Trace the Inputs (in:0) port of MultipleInputForm++ (typically connected to List.Create)
+                        // so we preserve the exact visual order of Data-Shapes widgets on the form
+                        if (n.TryGetValue("Inputs", out object fInps) && fInps is List<object> fInList && fInList.Count > 0)
                         {
-                            details.HasDataShapesForm = true;
-                        }
-                        else
-                        {
-                            // Mark input feeder nodes as non-top-level inputs
-                            if (n.TryGetValue("Inputs", out object inps) && inps is List<object> inList)
+                            var firstPort = fInList[0] as Dictionary<string, object>;
+                            string fpId = firstPort?.Str("Id");
+                            if (!string.IsNullOrEmpty(fpId) && connEndToStart.TryGetValue(fpId, out string listStartPort) &&
+                                portToNode.TryGetValue(listStartPort, out var listPair))
                             {
-                                foreach (var p in inList.OfType<Dictionary<string, object>>())
+                                var listNode = listPair.node;
+                                if (IsDataShapesNode(listNode))
                                 {
-                                    string pId = p.Str("Id");
-                                    if (!string.IsNullOrEmpty(pId) && connEndToStart.TryGetValue(pId, out string sPortId))
+                                    string dId = listNode.Str("Id");
+                                    if (!string.IsNullOrEmpty(dId)) dsOrderMap[dId] = 0;
+                                }
+                                else if (listNode.TryGetValue("Inputs", out object lInps) && lInps is List<object> lInList)
+                                {
+                                    for (int idx = 0; idx < lInList.Count; idx++)
                                     {
-                                        if (portToNode.TryGetValue(sPortId, out var srcPair))
+                                        var lp = lInList[idx] as Dictionary<string, object>;
+                                        string lpId = lp?.Str("Id");
+                                        if (!string.IsNullOrEmpty(lpId) && connEndToStart.TryGetValue(lpId, out string wStartPort) &&
+                                            portToNode.TryGetValue(wStartPort, out var wPair))
                                         {
-                                            string srcId = srcPair.node.Str("Id");
-                                            if (!string.IsNullOrEmpty(srcId)) feederNodeIds.Add(srcId);
+                                            string wId = wPair.node.Str("Id");
+                                            if (!string.IsNullOrEmpty(wId) && !dsOrderMap.ContainsKey(wId))
+                                                dsOrderMap[wId] = idx;
                                         }
                                     }
                                 }
                             }
                         }
                     }
+
+                    bfsQueue.Enqueue(n);
                 }
 
-                // 6. Scan all candidate input nodes (Data-Shapes components, Dynamo Player inputs, and native input nodes)
+                // Multi-hop BFS backwards from all Data-Shapes nodes to mark every upstream non-Data-Shapes feeder node
+                while (bfsQueue.Count > 0)
+                {
+                    var curr = bfsQueue.Dequeue();
+                    if (curr.TryGetValue("Inputs", out object inps) && inps is List<object> inList)
+                    {
+                        foreach (var p in inList.OfType<Dictionary<string, object>>())
+                        {
+                            string pId = p.Str("Id");
+                            if (!string.IsNullOrEmpty(pId) && connEndToStart.TryGetValue(pId, out string sPortId) &&
+                                portToNode.TryGetValue(sPortId, out var srcPair))
+                            {
+                                var srcNode = srcPair.node;
+                                string srcId = srcNode.Str("Id");
+                                if (!string.IsNullOrEmpty(srcId) && !IsDataShapesNode(srcNode) && feederNodeIds.Add(srcId))
+                                {
+                                    bfsQueue.Enqueue(srcNode);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Remove any Dynamo Player schema Inputs that are actually internal feeder nodes for Data-Shapes widgets
+                if (feederNodeIds.Count > 0 && details.Inputs.Count > 0)
+                {
+                    details.Inputs.RemoveAll(i => !string.IsNullOrEmpty(i.Id) && feederNodeIds.Contains(i.Id));
+                }
+
+                bool anyExplicitInputOrDs = details.Inputs.Count > 0 || details.HasDataShapesForm ||
+                    nodeList.OfType<Dictionary<string, object>>().Any(n =>
+                    {
+                        string nid = n.Str("Id");
+                        var nv = (nid != null && nodeViewsById.TryGetValue(nid, out var v)) ? v : null;
+                        bool setIn = n.Bool("IsSetAsInput") || n.Bool("IsInput") || (nv != null && (nv.Bool("IsSetAsInput") || nv.Bool("IsInput")));
+                        return (setIn && (nid == null || !feederNodeIds.Contains(nid))) || IsDataShapesNode(n);
+                    });
+
+                // 6. Scan all candidate input nodes (Data-Shapes input widgets, explicit IsSetAsInput nodes, or bare selection nodes)
                 foreach (var node in nodeList.OfType<Dictionary<string, object>>())
                 {
                     string id = node.Str("Id");
@@ -331,22 +400,26 @@ namespace BIMCommandCenter.Core.Revit
                     string funcSym = node.Str("FunctionSymbol") ?? "";
                     string desc = node.Str("Description") ?? "";
 
-                    bool isFromDataShapes = (id != null && dataShapesNodeIds.Contains(id)) ||
-                                            funcSig.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                            funcSym.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                            name.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0;
-
+                    bool isFromDataShapes = IsDataShapesNode(node);
                     string combined = $"{name} {funcSym} {funcSig} {concreteType}".ToLowerInvariant();
 
-                    // If it is the MultipleInputForm container itself, record it and skip as an input field
-                    if (combined.Contains("multipleinputform") || combined.Contains("multiple input form"))
+                    // Skip MultipleInputForm++ container and non-input Data-Shapes nodes (Description, Logo, TextNote, Image, Chart)
+                    if (combined.Contains("multipleinputform") || combined.Contains("multiple input form") ||
+                        combined.Contains("ui.description") || combined.Contains("ui.logo") ||
+                        combined.Contains("textnote") || combined.Contains("text note") ||
+                        combined.Contains("ui.image") || combined.Contains("chart"))
                     {
-                        details.HasDataShapesForm = true;
                         continue;
                     }
 
-                    // Skip internal feeder nodes that already provide labels/options to Data-Shapes components
+                    // Skip internal feeder nodes that provide labels/options/defaults/toggles to Data-Shapes components
                     if (id != null && feederNodeIds.Contains(id) && !isFromDataShapes)
+                    {
+                        continue;
+                    }
+
+                    // If MultipleInputForm++ has explicitly connected Data-Shapes widgets, skip any orphaned Data-Shapes node not wired to the form
+                    if (isFromDataShapes && dsOrderMap.Count > 0 && !string.IsNullOrEmpty(id) && !dsOrderMap.ContainsKey(id))
                     {
                         continue;
                     }
@@ -354,36 +427,50 @@ namespace BIMCommandCenter.Core.Revit
                     bool isSetAsInput = node.Bool("IsSetAsInput") || node.Bool("IsInput") ||
                                         (nv != null && (nv.Bool("IsSetAsInput") || nv.Bool("IsInput")));
 
+                    // Standard (non-Data-Shapes) Dynamo nodes MUST have IsSetAsInput == true to appear as inputs!
+                    // (Otherwise every internal String, Number, Boolean, Categories, or Views node in the graph would show up as an input).
+                    bool isBareTopLevelSelection = !anyExplicitInputOrDs &&
+                        (concreteType.IndexOf("SelectModelElement", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         concreteType.IndexOf("SelectFaces", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         concreteType.IndexOf("SelectEdges", StringComparison.OrdinalIgnoreCase) >= 0);
+
+                    if (!isFromDataShapes && !isSetAsInput && !isBareTopLevelSelection)
+                    {
+                        continue;
+                    }
+
                     bool isUiDropdown = combined.Contains("dropdown") || combined.Contains("radiobutton") ||
-                                        combined.Contains("combobox") || combined.Contains("categories") ||
-                                        combined.Contains("familytypes") || combined.Contains("levels") ||
-                                        combined.Contains("phases") || combined.Contains("views") ||
-                                        combined.Contains("sheets") || combined.Contains("walltypes") ||
-                                        combined.Contains("listview");
+                                        combined.Contains("combobox") || combined.Contains("listview") ||
+                                        (isSetAsInput && (combined.Contains("categories") || combined.Contains("familytypes") ||
+                                                          combined.Contains("levels") || combined.Contains("phases") ||
+                                                          combined.Contains("views") || combined.Contains("sheets") ||
+                                                          combined.Contains("walltypes")));
 
                     bool isUiTextbox = combined.Contains("textbox") || combined.Contains("text box") ||
-                                       combined.Contains("stringinput") || (name.Equals("String", StringComparison.OrdinalIgnoreCase) && isSetAsInput);
+                                       (isSetAsInput && (combined.Contains("stringinput") || name.Equals("String", StringComparison.OrdinalIgnoreCase)));
 
                     bool isUiSlider = combined.Contains("slider");
 
-                    bool isUiSelection = combined.Contains("selectmodelelement") || combined.Contains("select element") ||
-                                         combined.Contains("select face") || combined.Contains("selectface") ||
-                                         combined.Contains("selection") || combined.Contains("selectlinked");
+                    bool isUiSelection = combined.Contains("selectmodelelement") || combined.Contains("selectelements") ||
+                                         combined.Contains("select element") || combined.Contains("select face") ||
+                                         combined.Contains("selectface") || combined.Contains("selectedge") ||
+                                         combined.Contains("selectlinked") ||
+                                         (isSetAsInput && combined.Contains("selection"));
 
-                    bool isUiFile = combined.Contains("filepath") || combined.Contains("file path") || combined.Contains("filename");
+                    bool isUiFile = combined.Contains("filepath") || combined.Contains("file path");
 
-                    bool isUiDir = combined.Contains("directorypath") || combined.Contains("directory path") || combined.Contains("directory");
+                    bool isUiDir = combined.Contains("directorypath") || combined.Contains("directory path");
 
-                    bool isUiBool = combined.Contains("boolselector") || combined.Contains("toggle") || combined.Contains("checkbox") ||
-                                    (name.Equals("Boolean", StringComparison.OrdinalIgnoreCase) && isSetAsInput);
+                    bool isUiBool = (isFromDataShapes && combined.Contains("boolean")) ||
+                                    (isSetAsInput && (combined.Contains("boolselector") || combined.Contains("toggle") ||
+                                                      combined.Contains("checkbox") || name.Equals("Boolean", StringComparison.OrdinalIgnoreCase)));
 
-                    bool isUiNumber = combined.Contains("doubleinput") || combined.Contains("integerinput") ||
-                                      ((name.Equals("Number", StringComparison.OrdinalIgnoreCase) || name.Equals("Integer", StringComparison.OrdinalIgnoreCase)) && isSetAsInput);
-
-                    bool isGenericUi = isFromDataShapes || combined.Contains("ui.") || combined.Contains("data-shapes");
+                    bool isUiNumber = isSetAsInput && (combined.Contains("doubleinput") || combined.Contains("integerinput") ||
+                                                       name.Equals("Number", StringComparison.OrdinalIgnoreCase) ||
+                                                       name.Equals("Integer", StringComparison.OrdinalIgnoreCase));
 
                     if (!isSetAsInput && !isUiDropdown && !isUiTextbox && !isUiSlider &&
-                        !isUiSelection && !isUiFile && !isUiDir && !isUiBool && !isUiNumber && !isGenericUi)
+                        !isUiSelection && !isUiFile && !isUiDir && !isUiBool && !isUiNumber)
                     {
                         continue;
                     }
@@ -591,6 +678,14 @@ namespace BIMCommandCenter.Core.Revit
                     });
                 }
 
+                // If MultipleInputForm++ specifies an explicit widget order via List.Create, sort detected inputs accordingly
+                if (dsOrderMap.Count > 0 && details.Inputs.Count > 1)
+                {
+                    details.Inputs = details.Inputs
+                        .OrderBy(inp => dsOrderMap.TryGetValue(inp.Id ?? "", out int ord) ? ord : 9999)
+                        .ToList();
+                }
+
                 // 7. Extract Outputs array objects
                 if (dyn.TryGetValue("Outputs", out object outObj) && outObj is List<object> outList)
                 {
@@ -776,8 +871,127 @@ namespace BIMCommandCenter.Core.Revit
                         return comb.Contains("multipleinputform");
                     });
 
-                // Mode A: User wants the native Data-Shapes Windows Form dialog to appear!
-                if (runNativeUi && formNode != null)
+                // Apply user-specified input overrides onto matching nodes (and Data-Shapes default feeder nodes)
+                foreach (var nodeItem in nodeList)
+                {
+                    if (!(nodeItem is Dictionary<string, object> node)) continue;
+                    string id = node.Str("Id");
+                    string name = node.Str("Name");
+                    string concreteType = node.Str("ConcreteType") ?? "";
+                    string funcSig = node.Str("FunctionSignature") ?? "";
+                    string funcSym = node.Str("FunctionSymbol") ?? "";
+
+                    string overrideVal = null;
+                    if (!string.IsNullOrEmpty(id) && inputOverrides.TryGetValue(id, out string ov1)) overrideVal = ov1;
+                    else if (!string.IsNullOrEmpty(name) && inputOverrides.TryGetValue(name, out string ov2)) overrideVal = ov2;
+                    else
+                    {
+                        foreach (var kvp in inputOverrides)
+                        {
+                            if (!string.IsNullOrEmpty(kvp.Key) && !kvp.Key.StartsWith("__") &&
+                                !string.IsNullOrEmpty(name) &&
+                                (name.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 kvp.Key.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0))
+                            {
+                                overrideVal = kvp.Value;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (overrideVal == null) continue;
+
+                    bool isSel = concreteType.IndexOf("Selection", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 concreteType.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 name.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (isSel)
+                    {
+                        var uids = overrideVal.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                              .Select(s => s.Trim().Trim('"', '\'', '[', ']', ' '))
+                                              .Where(s => !string.IsNullOrEmpty(s))
+                                              .Cast<object>()
+                                              .ToList();
+                        if (uids.Count > 0)
+                        {
+                            node["selectionIdentifier"] = uids;
+                            node["InputValue"] = uids[0].ToString();
+                        }
+                    }
+                    else if (concreteType.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             name.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (double.TryParse(overrideVal, NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal))
+                        {
+                            node["Number"] = dVal;
+                            node["InputValue"] = dVal;
+                        }
+                        else
+                        {
+                            node["Number"] = overrideVal;
+                            node["InputValue"] = overrideVal;
+                        }
+                    }
+                    else if (concreteType.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             name.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
+                    {
+                        bool bVal = overrideVal.Equals("true", StringComparison.OrdinalIgnoreCase) || overrideVal == "1";
+                        node["InputValue"] = bVal;
+                    }
+                    else if (concreteType.IndexOf("Categories", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             concreteType.IndexOf("FamilyTypes", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             concreteType.IndexOf("Levels", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             concreteType.IndexOf("Phases", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        node["SelectedString"] = overrideVal;
+                        node["InputValue"] = overrideVal;
+                    }
+                    else if (name.IndexOf("UI.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             funcSig.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             funcSym.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        node["InputValue"] = overrideVal;
+                        node["Value"] = overrideVal;
+                        node["SelectedString"] = overrideVal;
+
+                        if (node.TryGetValue("Inputs", out object inPorts) && inPorts is List<object> ipList)
+                        {
+                            foreach (var p in ipList.OfType<Dictionary<string, object>>())
+                            {
+                                string pn = (p.Str("Name") ?? "").ToLowerInvariant();
+                                if (pn.Contains("default") || pn.Contains("text"))
+                                {
+                                    string pId = p.Str("Id");
+                                    if (connEndToStart.TryGetValue(pId, out string startPortId) &&
+                                        portToNode.TryGetValue(startPortId, out var srcNode))
+                                    {
+                                        srcNode["InputValue"] = overrideVal;
+                                        srcNode["Value"] = overrideVal;
+                                        if (srcNode.Str("ConcreteType").IndexOf("CodeBlock", StringComparison.OrdinalIgnoreCase) >= 0)
+                                        {
+                                            srcNode["Code"] = Json.Stringify(overrideVal) + ";";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (double.TryParse(overrideVal, NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal))
+                        {
+                            node["InputValue"] = dVal;
+                        }
+                        else
+                        {
+                            node["InputValue"] = overrideVal;
+                            node["Value"] = overrideVal;
+                        }
+                    }
+                }
+
+                // Ensure Data-Shapes UI.MultipleInputForm ++ Toggle is set to true so the form evaluates and outputs all ports
+                if (formNode != null)
                 {
                     formNode["InputValue"] = true;
                     if (formNode.TryGetValue("Inputs", out object formInputs) && formInputs is List<object> fList)
@@ -792,196 +1006,6 @@ namespace BIMCommandCenter.Core.Revit
                                     portToNode.TryGetValue(tStartId, out var boolNode))
                                 {
                                     boolNode["InputValue"] = true;
-                                }
-                            }
-                        }
-                    }
-                }
-                // Mode B: User is providing inputs from Command Center -> inject & bypass popup!
-                else
-                {
-                    var orderedOverrides = new List<string>();
-
-                    foreach (var nodeItem in nodeList)
-                    {
-                        if (!(nodeItem is Dictionary<string, object> node)) continue;
-                        string id = node.Str("Id");
-                        string name = node.Str("Name");
-                        string concreteType = node.Str("ConcreteType") ?? "";
-                        string funcSig = node.Str("FunctionSignature") ?? "";
-                        string funcSym = node.Str("FunctionSymbol") ?? "";
-
-                        string overrideVal = null;
-                        if (!string.IsNullOrEmpty(id) && inputOverrides.TryGetValue(id, out string ov1)) overrideVal = ov1;
-                        else if (!string.IsNullOrEmpty(name) && inputOverrides.TryGetValue(name, out string ov2)) overrideVal = ov2;
-                        else
-                        {
-                            foreach (var kvp in inputOverrides)
-                            {
-                                if (!string.IsNullOrEmpty(kvp.Key) &&
-                                    (name.IndexOf(kvp.Key, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                     kvp.Key.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0))
-                                {
-                                    overrideVal = kvp.Value;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (overrideVal == null) continue;
-                        orderedOverrides.Add(overrideVal);
-
-                        bool isSel = concreteType.IndexOf("Selection", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                     concreteType.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                     name.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                        if (isSel)
-                        {
-                            var uids = overrideVal.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                                                  .Select(s => s.Trim().Trim('"', '\'', '[', ']', ' '))
-                                                  .Where(s => !string.IsNullOrEmpty(s))
-                                                  .Cast<object>()
-                                                  .ToList();
-                            if (uids.Count > 0)
-                            {
-                                node["selectionIdentifier"] = uids;
-                                node["InputValue"] = uids[0].ToString();
-                            }
-                        }
-                        else if (concreteType.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 name.IndexOf("slider", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            if (double.TryParse(overrideVal, NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal))
-                            {
-                                node["Number"] = dVal;
-                                node["InputValue"] = dVal;
-                            }
-                            else
-                            {
-                                node["Number"] = overrideVal;
-                                node["InputValue"] = overrideVal;
-                            }
-                        }
-                        else if (concreteType.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 name.Equals("Boolean", StringComparison.OrdinalIgnoreCase))
-                        {
-                            bool bVal = overrideVal.Equals("true", StringComparison.OrdinalIgnoreCase) || overrideVal == "1";
-                            node["InputValue"] = bVal;
-                        }
-                        else if (concreteType.IndexOf("Categories", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 concreteType.IndexOf("FamilyTypes", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 concreteType.IndexOf("Levels", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 concreteType.IndexOf("Phases", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            node["SelectedString"] = overrideVal;
-                            node["InputValue"] = overrideVal;
-                        }
-                        else if (name.IndexOf("UI.", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 funcSig.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 funcSym.IndexOf("Data-Shapes", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            node["InputValue"] = overrideVal;
-                            node["Value"] = overrideVal;
-                            node["SelectedString"] = overrideVal;
-
-                            if (node.TryGetValue("Inputs", out object inPorts) && inPorts is List<object> ipList)
-                            {
-                                foreach (var p in ipList.OfType<Dictionary<string, object>>())
-                                {
-                                    string pn = (p.Str("Name") ?? "").ToLowerInvariant();
-                                    if (pn.Contains("default") || pn.Contains("text") || pn.Contains("keys"))
-                                    {
-                                        string pId = p.Str("Id");
-                                        if (connEndToStart.TryGetValue(pId, out string startPortId) &&
-                                            portToNode.TryGetValue(startPortId, out var srcNode))
-                                        {
-                                            srcNode["InputValue"] = overrideVal;
-                                            srcNode["Value"] = overrideVal;
-                                            if (srcNode.Str("ConcreteType").IndexOf("CodeBlock", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                srcNode["Code"] = Json.Stringify(overrideVal) + ";";
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (double.TryParse(overrideVal, NumberStyles.Any, CultureInfo.InvariantCulture, out double dVal))
-                            {
-                                node["InputValue"] = dVal;
-                            }
-                            else
-                            {
-                                node["InputValue"] = overrideVal;
-                                node["Value"] = overrideVal;
-                            }
-                        }
-                    }
-
-                    // If MultipleInputForm is present and we have user inputs to feed:
-                    if (formNode != null && inputOverrides.Count > 0)
-                    {
-                        // Disable form popup by setting toggle to false
-                        formNode["InputValue"] = false;
-                        if (formNode.TryGetValue("Inputs", out object formInputs) && formInputs is List<object> fList)
-                        {
-                            foreach (var fPort in fList.OfType<Dictionary<string, object>>())
-                            {
-                                string fpName = (fPort.Str("Name") ?? "").ToLowerInvariant();
-                                if (fpName.Contains("toggle") || fpName.Contains("run"))
-                                {
-                                    string tPortId = fPort.Str("Id");
-                                    if (connEndToStart.TryGetValue(tPortId, out string tStartId) &&
-                                        portToNode.TryGetValue(tStartId, out var boolNode))
-                                    {
-                                        boolNode["InputValue"] = false;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Replace MultipleInputForm's values output connection with a CodeBlock outputting the user values
-                        if (formNode.TryGetValue("Outputs", out object formOutputs) && formOutputs is List<object> foList && foList.Count > 0)
-                        {
-                            var valuesPort = foList[0] as Dictionary<string, object>;
-                            string valuesPortId = valuesPort?.Str("Id");
-
-                            if (!string.IsNullOrEmpty(valuesPortId))
-                            {
-                                string cbNodeId = Guid.NewGuid().ToString("N");
-                                string cbPortId = Guid.NewGuid().ToString("N");
-
-                                var valList = orderedOverrides.Count > 0 ? orderedOverrides : inputOverrides.Values.ToList();
-                                string codeContent = "{" + string.Join(", ", valList.Select(v => Json.Stringify(v))) + "};";
-
-                                var codeBlockNode = new Dictionary<string, object>
-                                {
-                                    ["ConcreteType"] = "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
-                                    ["NodeType"] = "CodeBlockNode",
-                                    ["Code"] = codeContent,
-                                    ["Id"] = cbNodeId,
-                                    ["Inputs"] = new List<object>(),
-                                    ["Outputs"] = new List<object>
-                                    {
-                                        new Dictionary<string, object>
-                                        {
-                                            ["Id"] = cbPortId,
-                                            ["Name"] = "",
-                                            ["Type"] = "var[]..[]"
-                                        }
-                                    }
-                                };
-
-                                nodeList.Add(codeBlockNode);
-
-                                foreach (var c in connectorList.OfType<Dictionary<string, object>>())
-                                {
-                                    if (string.Equals(c.Str("Start"), valuesPortId, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        c["Start"] = cbPortId;
-                                    }
                                 }
                             }
                         }
