@@ -489,6 +489,31 @@ namespace BIMCommandCenter.Core.UI
                     };
                 }
 
+                case "saveFamilyDescription":
+                {
+                    string targetPath = payload.Str("targetPath");
+                    string desc = (payload.Str("description") ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(targetPath))
+                        throw new ArgumentException("targetPath is required to save family description.");
+
+                    string dir = System.IO.Path.GetDirectoryName(targetPath);
+                    if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
+
+                    string baseName = System.IO.Path.GetFileNameWithoutExtension(targetPath);
+                    string sidecarPath = System.IO.Path.Combine(dir, baseName + ".desc.txt");
+
+                    System.IO.File.WriteAllText(sidecarPath, desc);
+                    _s.FamilyCatalog?.GetCatalog(true);
+
+                    return new Dictionary<string, object>
+                    {
+                        ["ok"] = true,
+                        ["saved"] = true,
+                        ["path"] = sidecarPath,
+                        ["description"] = desc
+                    };
+                }
+
                 case "getRibbonTools":
                 {
                     var pinned = UserRibbonManager.LoadPinnedTools();
