@@ -295,7 +295,12 @@ namespace BIMCommandCenter.Core.Catalog
                     }
 
                     string fileName = Path.GetFileName(file);
-                    if (existing.Contains(file) || existing.Contains(fileName)) continue;
+                    bool isGenericScript = fileName.Equals("script.py", StringComparison.OrdinalIgnoreCase) ||
+                                           fileName.Equals("main.py", StringComparison.OrdinalIgnoreCase) ||
+                                           fileName.Equals("run.py", StringComparison.OrdinalIgnoreCase);
+
+                    if (existing.Contains(file)) continue;
+                    if (!isGenericScript && existing.Contains(fileName)) continue;
 
                     string baseName = Path.GetFileNameWithoutExtension(file);
                     string ext = Path.GetExtension(file).ToLowerInvariant();
@@ -388,7 +393,7 @@ namespace BIMCommandCenter.Core.Catalog
                                 !parentFolder.Equals("python", StringComparison.OrdinalIgnoreCase) &&
                                 !parentFolder.Equals("scripts", StringComparison.OrdinalIgnoreCase))
                             {
-                                string cleanParent = Regex.Replace(parentFolder, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown)$", "", RegexOptions.IgnoreCase);
+                                string cleanParent = Regex.Replace(parentFolder, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton)$", "", RegexOptions.IgnoreCase);
                                 if (!string.IsNullOrWhiteSpace(cleanParent))
                                 {
                                     baseName = cleanParent;
@@ -412,6 +417,15 @@ namespace BIMCommandCenter.Core.Catalog
                             string rExt = Path.GetExtension(resolved).ToLowerInvariant();
                             actionType = (rExt == ".gh" || rExt == ".ghx") ? "Grasshopper" : (rExt == ".dyn" ? "Dynamo" : (rExt == ".py" ? "PyRevit" : "NativeAddin"));
                             iconName = (rExt == ".gh" || rExt == ".ghx") ? "Box" : (rExt == ".dyn" ? "PlayCircle" : (rExt == ".py" ? "Code" : "Activity"));
+
+                            if (baseName.Equals("script", StringComparison.OrdinalIgnoreCase))
+                            {
+                                string resolvedBase = Path.GetFileNameWithoutExtension(resolved);
+                                if (!string.IsNullOrWhiteSpace(resolvedBase) && !resolvedBase.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    baseName = resolvedBase;
+                                }
+                            }
                         }
                     }
 
@@ -419,15 +433,30 @@ namespace BIMCommandCenter.Core.Catalog
                     try { friendlyTitle = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(friendlyTitle); } catch {}
 
                     string finalExt = Path.GetExtension(targetPath).ToLowerInvariant();
+                    if (ext == ".py" || finalExt == ".py" || actionType == "PyRevit" || fileName.Equals("script.py", StringComparison.OrdinalIgnoreCase) || baseName.Equals("script", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string pyTitle = ResolvePyRevitTitle(targetPath, friendlyTitle);
+                        if (!string.IsNullOrWhiteSpace(pyTitle) && !pyTitle.Equals("script", StringComparison.OrdinalIgnoreCase))
+                        {
+                            friendlyTitle = pyTitle;
+                        }
+                    }
+
                     var meta = ExtractScriptMetadata(targetPath, finalExt, friendlyTitle, category);
-                    if (!string.IsNullOrWhiteSpace(meta.TitleOverride))
+                    if (!string.IsNullOrWhiteSpace(meta.TitleOverride) && !meta.TitleOverride.Equals("script", StringComparison.OrdinalIgnoreCase))
                     {
                         friendlyTitle = meta.TitleOverride;
                     }
 
+                    string safeId = Regex.Replace(friendlyTitle.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+                    if (string.IsNullOrEmpty(safeId) || safeId == "script")
+                    {
+                        safeId = "tool-" + Math.Abs(file.GetHashCode()).ToString("x");
+                    }
+
                     var autoTool = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
                     {
-                        ["toolId"] = "local-" + Regex.Replace(baseName.ToLowerInvariant(), "[^a-z0-9]+", "-"),
+                        ["toolId"] = "local-" + safeId,
                         ["title"] = friendlyTitle,
                         ["name"] = friendlyTitle,
                         ["category"] = category,
@@ -455,6 +484,7 @@ namespace BIMCommandCenter.Core.Catalog
 
                     tools.Insert(0, autoTool); // Put user's central tools at the top!
                     existing.Add(file);
+                    if (!isGenericScript) existing.Add(fileName);
                 }
 
                 // Check for companion .desc.txt overrides on existing catalog tools
@@ -537,20 +567,30 @@ namespace BIMCommandCenter.Core.Catalog
 
                 // Check for companion pyRevit bundle.yaml metadata
                 string bundleYaml = Path.Combine(dir, "bundle.yaml");
+                if (!File.Exists(bundleYaml)) bundleYaml = Path.Combine(dir, "bundle.yml");
                 if (File.Exists(bundleYaml))
                 {
                     string yamlContent = File.ReadAllText(bundleYaml);
-                    var titleMatch = Regex.Match(yamlContent, @"^title:\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                    if (titleMatch.Success && !string.IsNullOrWhiteSpace(titleMatch.Groups[1].Value))
+                    var locMatch = Regex.Match(yamlContent, @"(?:^|\n)\s*title:\s*\r?\n\s+[a-zA-Z_-]+:\s*([^\r\n]+)", RegexOptions.IgnoreCase);
+                    if (locMatch.Success && !string.IsNullOrWhiteSpace(locMatch.Groups[1].Value))
                     {
-                        meta.TitleOverride = titleMatch.Groups[1].Value.Trim('\'', '"', ' ');
+                        meta.TitleOverride = CleanPyRevitTitle(locMatch.Groups[1].Value);
                     }
-                    var tooltipMatch = Regex.Match(yamlContent, @"^tooltip:\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    else
+                    {
+                        var titleMatch = Regex.Match(yamlContent, @"(?:^|\n)\s*_?title:\s*[""']?([^""'\r\n]+)[""']?", RegexOptions.IgnoreCase);
+                        if (titleMatch.Success && !string.IsNullOrWhiteSpace(titleMatch.Groups[1].Value))
+                        {
+                            meta.TitleOverride = CleanPyRevitTitle(titleMatch.Groups[1].Value);
+                        }
+                    }
+
+                    var tooltipMatch = Regex.Match(yamlContent, @"(?:^|\n)\s*tooltip:\s*[""']?([^""'\r\n]+)[""']?", RegexOptions.IgnoreCase);
                     if (tooltipMatch.Success && !string.IsNullOrWhiteSpace(tooltipMatch.Groups[1].Value))
                     {
-                        meta.Description = tooltipMatch.Groups[1].Value.Trim('\'', '"', ' ');
+                        meta.Description = CleanPyRevitTitle(tooltipMatch.Groups[1].Value);
                     }
-                    var authorMatch = Regex.Match(yamlContent, @"^author:\s*(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                    var authorMatch = Regex.Match(yamlContent, @"(?:^|\n)\s*author:\s*[""']?([^""'\r\n]+)[""']?", RegexOptions.IgnoreCase);
                     if (authorMatch.Success && !string.IsNullOrWhiteSpace(authorMatch.Groups[1].Value))
                     {
                         meta.Author = authorMatch.Groups[1].Value.Trim('\'', '"', ' ');
@@ -603,8 +643,8 @@ namespace BIMCommandCenter.Core.Catalog
                 catch { }
             }
 
-            // 3. PyRevit (.py) parser: inspects docstrings ("""..."""), __doc__, and comment headers
-            if (string.IsNullOrEmpty(meta.Description) && ext.Equals(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
+            // 3. PyRevit (.py) parser: inspects __title__, docstrings ("""..."""), __doc__, and comment headers
+            if (ext.Equals(".py", StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath))
             {
                 try
                 {
@@ -613,9 +653,27 @@ namespace BIMCommandCenter.Core.Catalog
                     bool inDocstring = false;
                     string quoteType = "";
 
-                    for (int i = 0; i < Math.Min(lines.Length, 60); i++)
+                    for (int i = 0; i < Math.Min(lines.Length, 80); i++)
                     {
                         string line = lines[i].Trim();
+
+                        // Check __title__ = "..."
+                        if (string.IsNullOrEmpty(meta.TitleOverride) && line.StartsWith("__title__", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var tm = Regex.Match(lines[i], "__title__\\s*=\\s*(?:[bB]?r?|r?[bB]?)(?:\"\"\"([\\s\\S]*?)\"\"\"|'''([\\s\\S]*?)'''|\"([^\"\\r\\n]*)\"|'([^'\\r\\n]*)')", RegexOptions.IgnoreCase);
+                            if (tm.Success)
+                            {
+                                string raw = tm.Groups[1].Success && !string.IsNullOrEmpty(tm.Groups[1].Value) ? tm.Groups[1].Value :
+                                            (tm.Groups[2].Success && !string.IsNullOrEmpty(tm.Groups[2].Value) ? tm.Groups[2].Value :
+                                            (tm.Groups[3].Success && !string.IsNullOrEmpty(tm.Groups[3].Value) ? tm.Groups[3].Value : tm.Groups[4].Value));
+                                string clean = CleanPyRevitTitle(raw);
+                                if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    meta.TitleOverride = clean;
+                                }
+                            }
+                        }
+
                         if (!inDocstring)
                         {
                             if (line.StartsWith("\"\"\"") || line.StartsWith("'''"))
@@ -643,6 +701,15 @@ namespace BIMCommandCenter.Core.Catalog
                                 var m = Regex.Match(line, @"__author__\s*=\s*['""]([^'""]+)['""]");
                                 if (m.Success) meta.Author = m.Groups[1].Value;
                             }
+                            else if (line.StartsWith("# Title:", StringComparison.OrdinalIgnoreCase) || line.StartsWith("# Name:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (string.IsNullOrEmpty(meta.TitleOverride))
+                                {
+                                    string t = CleanPyRevitTitle(line.Substring(line.IndexOf(':') + 1));
+                                    if (!string.IsNullOrWhiteSpace(t) && !t.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                        meta.TitleOverride = t;
+                                }
+                            }
                             else if (line.StartsWith("# Description:", StringComparison.OrdinalIgnoreCase) || line.StartsWith("# Desc:", StringComparison.OrdinalIgnoreCase))
                             {
                                 sb.Append(line.Substring(line.IndexOf(':') + 1).Trim());
@@ -661,7 +728,17 @@ namespace BIMCommandCenter.Core.Catalog
                     }
 
                     string doc = sb.ToString().Trim();
-                    if (!string.IsNullOrEmpty(doc)) meta.Description = doc;
+                    if (string.IsNullOrEmpty(meta.Description) && !string.IsNullOrEmpty(doc)) meta.Description = doc;
+
+                    // Fallback title resolution if not explicitly set yet
+                    if (string.IsNullOrEmpty(meta.TitleOverride) || meta.TitleOverride.Equals("script", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string res = ResolvePyRevitTitle(targetPath, friendlyTitle);
+                        if (!string.IsNullOrWhiteSpace(res) && !res.Equals("script", StringComparison.OrdinalIgnoreCase))
+                        {
+                            meta.TitleOverride = res;
+                        }
+                    }
                 }
                 catch { }
             }
@@ -719,6 +796,199 @@ namespace BIMCommandCenter.Core.Catalog
             }
 
             return meta;
+        }
+
+        /// <summary>
+        /// Resolves a human-friendly title for pyRevit pushbuttons and Python scripts.
+        /// Inspects in order:
+        ///   1. Python source code for __title__ = "..." or __title__ = """...""" (replacing \n with space)
+        ///   2. pyRevit bundle.yaml (title: ..., _title: ..., or indented localized title: en_us)
+        ///   3. Enclosing folder hierarchy (stripping .pushbutton, .smartbutton, etc. and splitting CamelCase)
+        ///   4. Script docstring / comment header (# Title: ...)
+        ///   5. Fallback to defaultTitle or cleaned file basename
+        /// </summary>
+        public static string ResolvePyRevitTitle(string scriptPath, string defaultTitle = null)
+        {
+            if (string.IsNullOrWhiteSpace(scriptPath)) return defaultTitle ?? "PyRevit Tool";
+
+            try
+            {
+                string filePath = scriptPath;
+                if (Directory.Exists(filePath))
+                {
+                    string cand = Path.Combine(filePath, "script.py");
+                    if (File.Exists(cand)) filePath = cand;
+                }
+
+                string dir = Path.GetDirectoryName(filePath);
+
+                // 1. Check Python script content for __title__ = "..."
+                if (File.Exists(filePath))
+                {
+                    try
+                    {
+                        using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                        {
+                            char[] buffer = new char[8192];
+                            int read = reader.Read(buffer, 0, buffer.Length);
+                            if (read > 0)
+                            {
+                                string content = new string(buffer, 0, read);
+                                var m = Regex.Match(content, "__title__\\s*=\\s*(?:[bB]?r?|r?[bB]?)(?:\"\"\"([\\s\\S]*?)\"\"\"|'''([\\s\\S]*?)'''|\"([^\"\\r\\n]*)\"|'([^'\\r\\n]*)')", RegexOptions.IgnoreCase);
+                                if (m.Success)
+                                {
+                                    string raw = m.Groups[1].Success && !string.IsNullOrEmpty(m.Groups[1].Value) ? m.Groups[1].Value :
+                                                (m.Groups[2].Success && !string.IsNullOrEmpty(m.Groups[2].Value) ? m.Groups[2].Value :
+                                                (m.Groups[3].Success && !string.IsNullOrEmpty(m.Groups[3].Value) ? m.Groups[3].Value : m.Groups[4].Value));
+
+                                    if (!string.IsNullOrWhiteSpace(raw))
+                                    {
+                                        string clean = CleanPyRevitTitle(raw);
+                                        if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            return clean;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 2. Check bundle.yaml / bundle.yml in directory
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                {
+                    string bundleYaml = Path.Combine(dir, "bundle.yaml");
+                    if (!File.Exists(bundleYaml)) bundleYaml = Path.Combine(dir, "bundle.yml");
+
+                    if (File.Exists(bundleYaml))
+                    {
+                        try
+                        {
+                            string yaml = File.ReadAllText(bundleYaml);
+                            var mLoc = Regex.Match(yaml, @"(?:^|\n)\s*title:\s*\r?\n\s+[a-zA-Z_-]+:\s*([^\r\n]+)", RegexOptions.IgnoreCase);
+                            if (mLoc.Success && !string.IsNullOrWhiteSpace(mLoc.Groups[1].Value))
+                            {
+                                string clean = CleanPyRevitTitle(mLoc.Groups[1].Value);
+                                if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                    return clean;
+                            }
+
+                            var mDirect = Regex.Match(yaml, @"(?:^|\n)\s*_?title:\s*[""']?([^""'\r\n]+)[""']?", RegexOptions.IgnoreCase);
+                            if (mDirect.Success && !string.IsNullOrWhiteSpace(mDirect.Groups[1].Value))
+                            {
+                                string clean = CleanPyRevitTitle(mDirect.Groups[1].Value);
+                                if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                    return clean;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 3. Inspect directory hierarchy (e.g. DoorRenumber.pushbutton, 01_BatchExport.smartbutton)
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    DirectoryInfo cur = new DirectoryInfo(dir);
+                    int depth = 0;
+                    while (cur != null && depth < 3)
+                    {
+                        string folderName = cur.Name;
+                        if (Regex.IsMatch(folderName, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton)$", RegexOptions.IgnoreCase))
+                        {
+                            string baseFolder = Regex.Replace(folderName, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton)$", "", RegexOptions.IgnoreCase);
+                            string clean = FormatTitleFromFolderName(baseFolder);
+                            if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                return clean;
+                        }
+
+                        if (!cur.Name.Equals("scripts", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.Equals("pyrevit", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.Equals("python", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.Equals("tools", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.Equals("bin", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.Equals("lib", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.EndsWith(".extension", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.EndsWith(".tab", StringComparison.OrdinalIgnoreCase) &&
+                            !cur.Name.EndsWith(".panel", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string clean = FormatTitleFromFolderName(cur.Name);
+                            if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                return clean;
+                        }
+
+                        cur = cur.Parent;
+                        depth++;
+                    }
+                }
+
+                // 4. Check comments/docstring for # Title: ...
+                if (File.Exists(filePath))
+                {
+                    try
+                    {
+                        string[] lines = File.ReadAllLines(filePath);
+                        for (int i = 0; i < Math.Min(lines.Length, 30); i++)
+                        {
+                            string line = lines[i].Trim();
+                            if (line.StartsWith("# Title:", StringComparison.OrdinalIgnoreCase) ||
+                                line.StartsWith("# Name:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                string val = line.Substring(line.IndexOf(':') + 1).Trim();
+                                string clean = CleanPyRevitTitle(val);
+                                if (!string.IsNullOrWhiteSpace(clean) && !clean.Equals("script", StringComparison.OrdinalIgnoreCase))
+                                    return clean;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            if (!string.IsNullOrWhiteSpace(defaultTitle) &&
+                !defaultTitle.Equals("script", StringComparison.OrdinalIgnoreCase) &&
+                !defaultTitle.Equals("script.py", StringComparison.OrdinalIgnoreCase))
+            {
+                return defaultTitle;
+            }
+
+            string fileBase = Path.GetFileNameWithoutExtension(scriptPath);
+            if (!string.IsNullOrWhiteSpace(fileBase) && !fileBase.Equals("script", StringComparison.OrdinalIgnoreCase))
+            {
+                return FormatTitleFromFolderName(fileBase);
+            }
+
+            return "PyRevit Tool";
+        }
+
+        private static string CleanPyRevitTitle(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            string clean = raw.Replace("\\n", " ").Replace("\\r", " ").Replace("\\t", " ")
+                              .Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Replace("\t", " ");
+            clean = Regex.Replace(clean, @"\s+", " ").Trim('"', '\'', ' ', '\t');
+            try
+            {
+                clean = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(clean);
+            }
+            catch { }
+            return clean;
+        }
+
+        private static string FormatTitleFromFolderName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            string clean = Regex.Replace(name, @"^[0-9]+[_\s-]+", "");
+            clean = Regex.Replace(clean, @"([a-z0-9])([A-Z])", "$1 $2");
+            clean = Regex.Replace(clean, @"[_-]+", " ").Trim();
+            try
+            {
+                clean = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(clean);
+            }
+            catch { }
+            return clean;
         }
 
         private static string ResolveShortcutTarget(string shortcutPath)

@@ -614,14 +614,14 @@
       <form onsubmit="handleRegisterToolSubmit(event)" class="p-4 space-y-3 overflow-y-auto scroll flex-1 text-xs">
         <div>
           <label class="block font-semibold text-slate-700 mb-1">Tool File Path (.dyn, .py, or .dll) *</label>
-          <input id="reg-path" required type="text" placeholder="C:\Users\...\MyScript.dyn" class="w-full p-2 border border-slate-200 rounded-md font-mono text-xs">
+          <input id="reg-path" required type="text" oninput="handleRegPathInput()" placeholder="C:\Users\...\MyScript.dyn" class="w-full p-2 border border-slate-200 rounded-md font-mono text-xs">
           <p class="text-[10px] text-slate-400 mt-0.5">Absolute path to your local script or compiled add-in DLL.</p>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Tool Title *</label>
-            <input id="reg-title" required type="text" placeholder="e.g. Wall Opening Alignment" class="w-full p-2 border border-slate-200 rounded-md text-xs">
+            <input id="reg-title" required type="text" oninput="this.dataset.userEdited = 'true'" placeholder="e.g. Wall Opening Alignment" class="w-full p-2 border border-slate-200 rounded-md text-xs">
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Target Category *</label>
@@ -3789,10 +3789,66 @@ function updateRibbonBadgeText() {
 // ======================================================================
 function openRegisterModal() {
   document.getElementById('register-modal').classList.remove('hidden');
+  const titleInput = document.getElementById('reg-title');
+  if (titleInput) titleInput.dataset.userEdited = '';
   icons();
 }
 function closeRegisterModal() {
   document.getElementById('register-modal').classList.add('hidden');
+}
+
+function handleRegPathInput() {
+  const p = (document.getElementById('reg-path').value || '').trim();
+  if (!p) return;
+  const titleInput = document.getElementById('reg-title');
+  const catSelect = document.getElementById('reg-category');
+
+  // Category auto-detection
+  const lower = p.toLowerCase();
+  if (lower.endsWith('.dyn')) {
+    if (catSelect) catSelect.value = 'Dynamo';
+  } else if (lower.endsWith('.py') || lower.includes('.pushbutton') || lower.includes('.smartbutton')) {
+    if (catSelect) catSelect.value = 'PyRevit';
+  } else if (lower.endsWith('.dll') || lower.endsWith('.addin')) {
+    if (catSelect) catSelect.value = 'Custom Addins';
+  } else if (lower.endsWith('.gh') || lower.endsWith('.ghx')) {
+    if (catSelect) catSelect.value = 'Rhino';
+  }
+
+  // Title auto-detection if user hasn't explicitly typed one
+  if (titleInput && (!titleInput.dataset.userEdited || !titleInput.value.trim())) {
+    let raw = '';
+    const norm = p.replace(/\\/g, '/');
+    const parts = norm.split('/').filter(Boolean);
+    const fileName = parts[parts.length - 1] || '';
+
+    if (fileName.toLowerCase() === 'script.py' || lower.includes('.pushbutton')) {
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const seg = parts[i];
+        if (/\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton)$/i.test(seg)) {
+          raw = seg.replace(/\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton)$/i, '');
+          break;
+        }
+      }
+      if (!raw && parts.length >= 2) {
+        const parent = parts[parts.length - 2];
+        if (!['scripts', 'pyrevit', 'python', 'lib', 'bin'].includes(parent.toLowerCase())) {
+          raw = parent;
+        }
+      }
+    } else {
+      raw = fileName.replace(/\.[^/.]+$/, '');
+    }
+
+    if (raw && raw.toLowerCase() !== 'script') {
+      let clean = raw.replace(/^[0-9]+[_\s-]+/, '')
+                     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                     .replace(/[_-]+/g, ' ')
+                     .trim();
+      clean = clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      titleInput.value = clean;
+    }
+  }
 }
 
 async function handleRegisterToolSubmit(e) {

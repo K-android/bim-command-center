@@ -540,10 +540,26 @@ namespace BIMCommandCenter.Core.UI
                     string targetFolder = Path.Combine(root, cat);
                     Directory.CreateDirectory(targetFolder);
 
+                    // If title was omitted or is generic "script", auto-resolve friendly title from pyRevit or file metadata
+                    if (string.IsNullOrWhiteSpace(title) || title.Trim().Equals("script", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string ext = Path.GetExtension(srcFile).ToLowerInvariant();
+                        if (ext == ".py" || srcFile.IndexOf(".pushbutton", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            title = Catalog.CatalogService.ResolvePyRevitTitle(srcFile);
+                        }
+                        else
+                        {
+                            title = Path.GetFileNameWithoutExtension(srcFile);
+                        }
+                    }
+
                     string srcExt = Path.GetExtension(srcFile);
-                    string cleanName = string.IsNullOrWhiteSpace(title) 
-                        ? Path.GetFileNameWithoutExtension(srcFile)
-                        : System.Text.RegularExpressions.Regex.Replace(title, @"[\\/:*?""<>|]", "_");
+                    string cleanName = System.Text.RegularExpressions.Regex.Replace(title, @"[\\/:*?""<>|]", "_").Trim();
+                    if (string.IsNullOrWhiteSpace(cleanName) || cleanName.Equals("script", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanName = Catalog.CatalogService.ResolvePyRevitTitle(srcFile, Path.GetFileNameWithoutExtension(srcFile));
+                    }
 
                     string destFile;
                     if (makeShortcut)

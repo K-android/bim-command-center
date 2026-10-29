@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="IronPython.StdLib" Version="3.4.2" />
     <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiPackageVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />

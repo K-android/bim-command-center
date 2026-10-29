@@ -56,9 +56,45 @@ namespace BIMCommandCenter.Core.Revit
                 engine.Runtime.IO.SetOutput(outputBuffer, outputWriter);
                 engine.Runtime.IO.SetErrorOutput(outputBuffer, outputWriter);
 
+                // Pre-load IronPython.Modules assembly so native builtins (nt, math, time, errno, etc.) are registered
+                try
+                {
+                    var modulesAsm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "IronPython.Modules");
+                    if (modulesAsm == null)
+                    {
+                        string modulesDll = Path.Combine(AppConfig.CoreDir, "IronPython.Modules.dll");
+                        if (File.Exists(modulesDll)) modulesAsm = Assembly.LoadFrom(modulesDll);
+                    }
+                    if (modulesAsm != null)
+                    {
+                        engine.Runtime.LoadAssembly(modulesAsm);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Pre-load IronPython.Modules failed: " + ex.Message);
+                }
+
                 // Configure search paths (sys.path)
                 string scriptDir = Path.GetDirectoryName(scriptPath);
                 var searchPaths = new List<string> { scriptDir };
+
+                // 0. Bundled IronPython Standard Library (os, ntpath, math, json, re, collections, etc.)
+                var stdLibCandidates = new List<string>
+                {
+                    Path.Combine(AppConfig.CoreDir, "lib"),
+                    Path.Combine(AppConfig.CoreDir, "Lib"),
+                    Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "lib"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lib"),
+                    Path.Combine(AppConfig.LocalDataDir, "lib")
+                };
+                foreach (var cand in stdLibCandidates)
+                {
+                    if (!string.IsNullOrEmpty(cand) && Directory.Exists(cand) && !searchPaths.Contains(cand, StringComparer.OrdinalIgnoreCase))
+                    {
+                        searchPaths.Add(cand);
+                    }
+                }
 
                 // 1. Script's own and ancestor lib / bin / packages subfolders (walks up to ScriptsRoot)
                 var config = AppConfig.Load();
@@ -98,17 +134,26 @@ namespace BIMCommandCenter.Core.Revit
                 string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 string commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
 
                 string[] pyrevitDirs = new[]
                 {
                     Path.Combine(appData, "pyRevit-Master", "pyrevitlib"),
                     Path.Combine(appData, "pyRevit-Master", "site-packages"),
+                    Path.Combine(appData, "pyRevit-Master", "bin", "Lib"),
                     Path.Combine(appData, "pyRevit", "pyrevitlib"),
                     Path.Combine(appData, "pyRevit", "site-packages"),
+                    Path.Combine(appData, "pyRevit", "bin", "Lib"),
                     Path.Combine(localAppData, "pyRevit-Master", "pyrevitlib"),
                     Path.Combine(localAppData, "pyRevit", "pyrevitlib"),
                     Path.Combine(commonAppData, "pyRevit", "pyrevitlib"),
-                    Path.Combine(commonAppData, "pyRevit", "site-packages")
+                    Path.Combine(commonAppData, "pyRevit", "site-packages"),
+                    Path.Combine(commonAppData, "pyRevit", "bin", "Lib"),
+                    Path.Combine(programFiles, "pyRevit CLI", "pyrevitlib"),
+                    Path.Combine(programFiles, "pyRevit CLI", "bin", "Lib"),
+                    Path.Combine(programFilesX86, "pyRevit CLI", "pyrevitlib"),
+                    Path.Combine(programFilesX86, "pyRevit CLI", "bin", "Lib")
                 };
                 foreach (var pDir in pyrevitDirs)
                 {
@@ -123,6 +168,11 @@ namespace BIMCommandCenter.Core.Revit
                 if (Directory.Exists(corePyLib) && !searchPaths.Contains(corePyLib, StringComparer.OrdinalIgnoreCase))
                 {
                     searchPaths.Add(corePyLib);
+                }
+                string localPyLib = Path.Combine(AppConfig.LocalDataDir, "pylib");
+                if (Directory.Exists(localPyLib) && !searchPaths.Contains(localPyLib, StringComparer.OrdinalIgnoreCase))
+                {
+                    searchPaths.Add(localPyLib);
                 }
 
                 // 5. DynamoForRevit paths so scripts using RevitServices can resolve
