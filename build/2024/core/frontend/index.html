@@ -2884,12 +2884,12 @@ let chatAttachment = null;
 
 function initChips() {
   const list = [
-    { label: '💬 What can you do?', query: 'What tools are in the library?' },
+    { label: '💬 What can you do?', query: 'What tools and families are in the library?' },
+    { label: '🧱 Families & Blocks', query: 'Show available families and blocks' },
     { label: '🚪 Renumber Doors', query: 'How do I renumber doors?' },
     { label: '🏠 Audit Unplaced Rooms', query: 'Audit unplaced rooms' },
     { label: '📐 Purge CAD Imports', query: 'Inspect and purge imported CAD' },
-    { label: '🩺 Model Health Score', query: 'Run BIM Health Check' },
-    { label: '📦 Dynamo Packages', query: 'What Dynamo packages are installed?' }
+    { label: '🩺 Model Health Score', query: 'Run BIM Health Check' }
   ];
   document.getElementById('chips').innerHTML = list.map(c =>
     `<button onclick="sendQuick('${esc(c.query)}')" class="shrink-0 text-[11px] bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 transition">${esc(c.label)}</button>`
@@ -2905,16 +2905,16 @@ function clearChat() {
         Greetings! I am Archie, your Central BIM Librarian.
       </p>
       <p class="text-xs text-slate-600 leading-relaxed">
-        I curate our firm's verified Central Automation Library. I can help you find approved tools, run Dynamo graphs via Dynamo Player (clean inputs and outputs only), audit model health, or troubleshoot Revit automation workflows.
+        I manage our firm's verified <strong>Central Automation Library</strong> (Dynamo, pyRevit &amp; C# Add-ins) as well as our <strong>Central Families &amp; Blocks Library</strong> (<code>.rfa</code>, <code>.dwg</code>, <code>.3dm</code>, <code>.skp</code>). Ask me for any tool, family, or block—if multiple options share the same keyword or context, I'll present them so you can load or place the exact one you need.
       </p>
       <div class="pt-1 text-[11px] text-slate-500">
-        How can I help you today? Try clicking a suggestion below or typing your task:
+        How can I help you today? Try clicking a suggestion below or typing what you need:
       </div>
       <div class="pt-1 flex flex-wrap gap-1.5">
-        <button onclick="sendQuick('What tools are in the library?')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Browse Central Library</button>
+        <button onclick="sendQuick('What tools and families are in the library?')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Browse Library</button>
+        <button onclick="sendQuick('Show available families and blocks')" class="bg-indigo-50 text-indigo-700 text-[11px] px-2 py-0.5 rounded border border-indigo-200 hover:bg-indigo-100 transition">Families &amp; Blocks</button>
         <button onclick="sendQuick('How do I renumber doors?')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Renumber Doors</button>
         <button onclick="sendQuick('Audit unplaced rooms')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Room Hygiene</button>
-        <button onclick="sendQuick('Inspect and purge imported CAD')" class="bg-blue-50 text-blue-700 text-[11px] px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100 transition">Audit CAD</button>
       </div>
     </div>
   `);
@@ -3015,6 +3015,162 @@ function addUser(text, att) {
   icons();
 }
 
+async function ensureFamiliesLoaded() {
+  if (allFamilies && allFamilies.length > 0) return allFamilies;
+  try {
+    const res = await Bridge.call('getFamiliesCatalog', { refresh: false });
+    if (res && res.families) {
+      allFamilies = res.families;
+      const countBadge = document.getElementById('families-count');
+      if (countBadge) {
+        countBadge.textContent = allFamilies.length;
+        countBadge.classList.toggle('hidden', allFamilies.length === 0);
+      }
+      renderFamilyCategories(res.categories || []);
+    }
+  } catch (e) {}
+  return allFamilies || [];
+}
+
+function isExplicitCodeRequest(text) {
+  if (!text) return false;
+  return /\b(write|give|show|generate|create|provide|share)\b[\s\S]{0,30}\b(code|script|python|pyrevit code|c#|snippet|api code|node chain)\b|\b(code|python script)\s+for\b/i.test(text);
+}
+
+function findMatchingFamilies(queryText) {
+  if (!allFamilies || allFamilies.length === 0 || !queryText) return [];
+  const normQuery = queryText
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .toLowerCase()
+    .trim();
+
+  const stopWords = new Set([
+    'the', 'and', 'for', 'with', 'from', 'that', 'this', 'have', 'has', 'can', 'you', 'please',
+    'find', 'get', 'load', 'place', 'insert', 'show', 'give', 'need', 'want', 'looking', 'search',
+    'family', 'families', 'block', 'blocks', 'component', 'components', 'revit', 'rfa', 'dwg', 'into', 'project', 'model', 'any', 'all', 'some', 'options', 'available', 'what', 'are', 'in', 'library', 'central'
+  ]);
+
+  const rawWords = normQuery.split(/\s+/).filter(w => w.length >= 2 && !stopWords.has(w));
+  // Strip trailing 's' for simple singular/plural matching (e.g. "doors" -> "door", "chairs" -> "chair")
+  const stems = rawWords.map(w => w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w);
+
+  // If the user asked generically to see all families/blocks with no specific keyword
+  if (rawWords.length === 0 && /\b(family|families|block|blocks|rfa|dwg|3dm|skp|component|components)\b/i.test(normQuery)) {
+    return allFamilies.slice(0, 8);
+  }
+
+  const scored = allFamilies.map(fam => {
+    let score = 0;
+    const famNameNorm = (fam.name || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[^a-zA-Z0-9]+/g, ' ').toLowerCase();
+    const famCatNorm = (fam.category || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[^a-zA-Z0-9]+/g, ' ').toLowerCase();
+    const famFmtNorm = (fam.format || '').toLowerCase();
+    const fullText = `${famNameNorm} ${famCatNorm} ${famFmtNorm}`;
+
+    // Exact phrase match boost
+    if (rawWords.length > 0) {
+      const phrase = rawWords.join(' ');
+      if (famNameNorm.includes(phrase)) score += 20;
+      else if (famCatNorm.includes(phrase)) score += 12;
+    }
+
+    for (let i = 0; i < rawWords.length; i++) {
+      const w = rawWords[i];
+      const stem = stems[i];
+      if (famNameNorm.includes(w) || (stem.length >= 3 && famNameNorm.includes(stem))) score += 10;
+      if (famCatNorm.includes(w) || (stem.length >= 3 && famCatNorm.includes(stem))) score += 6;
+      if (fullText.includes(w)) score += 2;
+    }
+
+    return { fam, score };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+
+  return scored.map(x => x.fam);
+}
+
+function openFamiliesTabWithFilter(queryOrCategory) {
+  switchTab('families');
+  if (!queryOrCategory) return;
+  const catBtn = document.getElementById(`fam-cat-${queryOrCategory}`);
+  if (catBtn) {
+    filterFamilyCategory(queryOrCategory);
+  } else {
+    filterFamilyCategory('All');
+    const sInput = document.getElementById('search-families');
+    if (sInput) {
+      sInput.value = queryOrCategory;
+      onSearchFamiliesInput();
+    }
+  }
+}
+
+function renderFamilyChatCards(matchedFamilies, contextQuery = '') {
+  if (!matchedFamilies || matchedFamilies.length === 0) return;
+
+  const shown = matchedFamilies.slice(0, 6);
+  const isMultiple = shown.length > 1;
+
+  const cardsHtml = shown.map(fam => {
+    const safePath = esc(fam.fullPath || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `
+      <div class="bg-white border border-indigo-200/90 rounded-lg p-2.5 hover:border-indigo-400 transition shadow-2xs">
+        <div class="flex gap-2.5 items-center">
+          <div class="w-12 h-12 rounded-md bg-slate-100 border border-slate-200/80 overflow-hidden shrink-0 flex items-center justify-center relative">
+            ${fam.thumbnail ? `<img src="${fam.thumbnail}" alt="${esc(fam.name)}" class="w-full h-full object-contain p-0.5" />` : `
+              <div class="flex flex-col items-center justify-center text-indigo-400">
+                <i data-lucide="box" class="w-5 h-5 stroke-[1.75]"></i>
+                <span class="text-[8px] font-bold uppercase tracking-tight text-indigo-500 font-mono">${esc(fam.format || 'RFA')}</span>
+              </div>
+            `}
+            <span class="absolute top-0.5 right-0.5 px-1 rounded text-[7.5px] font-bold font-mono bg-slate-900/80 text-white">${esc(fam.format || 'RFA')}</span>
+          </div>
+
+          <div class="min-w-0 flex-1">
+            <div class="flex items-start justify-between gap-1">
+              <div class="font-bold text-slate-900 text-xs leading-tight truncate" title="${esc(fam.name)}">${esc(fam.name)}</div>
+              <span class="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
+                ${esc(fam.category || 'General')}
+              </span>
+            </div>
+            <div class="text-[10px] text-slate-400 mt-0.5">${esc(fam.fileSize || '')} ${fam.lastModified ? '• ' + esc(fam.lastModified) : ''}</div>
+
+            <div class="flex items-center gap-1.5 mt-1.5">
+              <button type="button" onclick="loadFamilyToProject('${safePath}', false)" class="py-1 px-2 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10.5px] flex items-center gap-1 transition">
+                <i data-lucide="download" class="w-3 h-3 text-slate-500"></i>
+                <span>Load</span>
+              </button>
+              <button type="button" onclick="loadFamilyToProject('${safePath}', true)" class="py-1 px-2.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[10.5px] flex items-center gap-1 shadow-2xs transition">
+                <i data-lucide="mouse-pointer-click" class="w-3 h-3 text-indigo-200"></i>
+                <span>Load &amp; Place</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const html = `
+    <div class="border border-indigo-200 bg-indigo-50/40 rounded-xl p-3 space-y-2 shadow-2xs">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-[10px] uppercase font-bold text-indigo-700 tracking-wide flex items-center gap-1">
+          <i data-lucide="box" class="w-3.5 h-3.5"></i>${isMultiple ? `Central Families & Blocks Options (${matchedFamilies.length} Matches)` : 'Central Family / Block'}
+        </span>
+        <button onclick="openFamiliesTabWithFilter('${esc(contextQuery).replace(/'/g, "\\'")}')" class="text-[10px] font-semibold text-indigo-600 hover:underline flex items-center gap-0.5">
+          <span>Open in Families Tab</span>
+          <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
+        </button>
+      </div>
+      ${isMultiple ? `<p class="text-[11px] text-slate-600">Multiple families/blocks match your request. Choose the option you want to load or place:</p>` : ''}
+      <div class="space-y-1.5 max-h-72 overflow-y-auto pr-0.5">
+        ${cardsHtml}
+      </div>
+    </div>
+  `;
+
+  addBot(html);
+}
+
 async function sendChat() {
   const inp = document.getElementById('chat-input');
   const text = inp.value.trim();
@@ -3031,6 +3187,7 @@ async function sendChat() {
   </div>`);
 
   try {
+    await ensureFamiliesLoaded();
     if (currentConfig.aiApiKey || currentConfig.aiProvider === 'local') {
       await callAiApi(text, att, typingId);
     } else {
@@ -3051,18 +3208,33 @@ async function callAiApi(promptText, att, typingId) {
     toolId: t.toolId,
     title: t.title,
     actionType: t.actionType,
-    category: t.category,
+    category: resolveCanonicalCategory(t),
     intendedOutcome: t.intendedOutcome,
     safetyLevel: t.safetyLevel,
     affectedData: t.affectedData,
     packagesRequired: t.packagesRequired
   }));
 
-  const systemInstructions = `You are Archie, the expert Central BIM Automation Librarian & Systems Architect inside Autodesk Revit.
-You are warm, interactive, highly knowledgeable, and concise.
+  const eligibleFamilies = (allFamilies || []).map(f => ({
+    id: f.id,
+    name: f.name,
+    category: f.category,
+    format: f.format,
+    fileSize: f.fileSize
+  }));
+
+  const userAskedForCode = isExplicitCodeRequest(promptText);
+
+  const systemInstructions = `You are Archie, the expert Central BIM Librarian inside Autodesk Revit.
+You manage BOTH:
+1. Approved Central Library Tools & Scripts (Dynamo graphs, pyRevit buttons/scripts, and C# Add-ins)
+2. Central Library Families & Blocks (.rfa Revit Families, .dwg CAD Blocks, .3dm Rhino Blocks, .skp SketchUp components)
 
 Approved Central Library Tools:
 ${JSON.stringify(eligibleTools)}
+
+Approved Central Library Families & Blocks:
+${JSON.stringify(eligibleFamilies)}
 
 Active Project Context:
 - Active Document: ${context.documentTitle || 'No document open'}
@@ -3070,19 +3242,19 @@ Active Project Context:
 - Revit Version: ${context.revitVersion || '2026'}
 - Installed Dynamo Packages: ${(context.installedDynamoPackages || []).join(', ')}
 
-GUIDELINES:
-1. Identify yourself conversationally as Archie. Never mention Antigravity or internal agent names.
-2. For Dynamo (.dyn) graphs, note that they run cleanly via Dynamo Player (inputs & outputs only, no graph editor canvas).
-3. If the user asks for model health, health check, model check, audit, hygiene, or warnings inspection, ALWAYS recommend the approved tool: [TOOL:bim-health-check]. Explain that it audits model elements, warnings, purgeable elements, CAD imports, views, and overall health score.
-4. If an approved automation in the Central Library directly solves the user's task, mention it and include this token:
-[TOOL:exact-toolId]
-Our interactive UI will automatically embed a 1-click execution card for that tool!
-5. If NO approved tool matches the user's request:
-   - Provide concrete, expert guidance on how to create or link it!
-   - Recommend the ideal platform (Dynamo graph or pyRevit script).
-   - Outline the specific Dynamo node chain (e.g. Categories -> All Elements -> Get/Set Parameter) or pyRevit API snippet.
-   - Provide the exact save path: "Save your file into your Central Library folder under '<Category>/Dynamo/<Name>.dyn' or '<Category>/PyRevit/<Name>.py' and BIM Command Center will automatically index it."
-   - Include [REQUEST_IDEA:Suggested Tool Name] so the user can log it to the backlog with one click.`;
+STRICT BEHAVIORAL RULES:
+1. Identify yourself conversationally as Archie. Keep answers concise and helpful.
+2. CRITICAL NO-CODE RULE: NEVER output code, Python scripts, C# code, Revit API code snippets, or Dynamo node-chain blueprints for any reason UNLESS the user explicitly asks you to write or show code/script (userAskedForCode=${userAskedForCode}). Do not volunteer code when a tool or family is missing or during normal conversation.
+3. MANAGING FAMILIES & BLOCKS:
+   - When the user asks for a family, block, or 3D/2D component (or mentions a keyword/category matching items in Approved Central Library Families & Blocks):
+   - If ONE specific family/block matches, recommend it and include: [FAMILY:exact-id]
+   - If MULTIPLE families or blocks match the same context, category, or keyword, explain that multiple options are available in the Central Library and include a [FAMILY:exact-id] token for EACH matching option (up to 6) so the user can choose which one to Load or Load & Place!
+4. MANAGING TOOLS & SCRIPTS:
+   - If the user asks for model health, health check, model audit, hygiene, or warnings inspection, ALWAYS recommend: [TOOL:bim-health-check].
+   - If an approved automation in the Central Library solves the user's task, mention it and include: [TOOL:exact-toolId].
+5. IF NO TOOL OR FAMILY MATCHES:
+   - Politely let the user know it isn't in the Central Library yet (do NOT give code or node chains unless explicitly asked for code).
+   - Include [REQUEST_IDEA:Suggested Name] so the user can log it to the team backlog with one click.`;
 
   let replyText = '';
 
@@ -3109,7 +3281,7 @@ Our interactive UI will automatically embed a 1-click execution card for that to
         model: currentConfig.aiModel || 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: systemInstructions },
-          { role: 'user', content: promptText || 'Recommend approved tool' }
+          { role: 'user', content: promptText || 'Recommend approved tool or family' }
         ]
       })
     });
@@ -3137,7 +3309,7 @@ Our interactive UI will automatically embed a 1-click execution card for that to
 
   document.getElementById(typingId)?.remove();
 
-  // Parse structured contract JSON if model returned code block
+  // Parse structured contract JSON if model returned a JSON contract block
   const jsonMatch = replyText.match(/```json\s*([\s\S]*?)\s*```/);
   if (jsonMatch) {
     try {
@@ -3147,6 +3319,40 @@ Our interactive UI will automatically embed a 1-click execution card for that to
         return;
       }
     } catch (e) {}
+  }
+
+  // Strip any unsolicited code blocks if the user did not explicitly ask for code/script
+  if (!userAskedForCode) {
+    replyText = replyText.replace(/```[\s\S]*?```/g, '').trim();
+  }
+
+  // Check for [FAMILY:id] tokens (supports single or multiple family options!)
+  const familyRegex = /\[FAMILY:\s*([^\]]+)\]/gi;
+  const familyMatches = [...replyText.matchAll(familyRegex)];
+  if (familyMatches.length > 0) {
+    const matchedFamList = [];
+    const seenFamIds = new Set();
+    familyMatches.forEach(m => {
+      const tokenVal = (m[1] || '').trim().toLowerCase();
+      const found = (allFamilies || []).filter(f =>
+        (f.id && f.id.toLowerCase() === tokenVal) ||
+        (f.name && f.name.toLowerCase() === tokenVal) ||
+        (f.name && f.name.toLowerCase().includes(tokenVal))
+      );
+      found.forEach(f => {
+        if (!seenFamIds.has(f.id)) {
+          seenFamIds.add(f.id);
+          matchedFamList.push(f);
+        }
+      });
+    });
+
+    const cleanText = replyText.replace(/\[FAMILY:\s*([^\]]+)\]/gi, '').replace(/\[TOOL:\s*([^\]]+)\]/gi, '').trim();
+    if (cleanText) addBot(renderMarkdown(cleanText));
+    if (matchedFamList.length > 0) {
+      renderFamilyChatCards(matchedFamList, promptText);
+      return;
+    }
   }
 
   // Check for [TOOL:toolId] tags and render
@@ -3193,7 +3399,7 @@ Our interactive UI will automatically embed a 1-click execution card for that to
           <span class="font-bold">Log to Backlog:</span> Submit <em>"${esc(suggestedTitle)}"</em> to governance queue.
         </div>
         <button onclick="openSubmitModal('${esc(suggestedTitle).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-2.5 py-1 rounded text-xs shrink-0 shadow-2xs transition">
-          Request Tool
+          Request Item
         </button>
       </div>
     `);
@@ -3269,28 +3475,33 @@ function renderContractCard(contract) {
   addBot(html);
 }
 
-// Intelligent Offline / Local Semantic Librarian
+// Intelligent Offline / Local Semantic Librarian (Manages both Tools/Scripts AND Families/Blocks)
 function respondWithLocalRouter(text) {
   const lower = text.toLowerCase().trim();
 
   // 1. Greetings & Librarian Persona
-  if (/^(hi|hello|hey|greetings|morning|afternoon|evening|help|who are you|what can you do)/i.test(lower)) {
+  if (/^(hi|hello|hey|greetings|morning|afternoon|evening|help|who are you|what can you do|what tools)/i.test(lower)) {
     const activeCats = getActiveCategories().filter(c => c.id !== 'All').slice(0, 4);
+    const famCount = (allFamilies || []).length;
     addBot(`
       <p class="font-semibold text-slate-800">Hello! I am <strong>Archie</strong>, your Central BIM Librarian.</p>
       <p class="text-slate-600 mt-1 leading-relaxed">
         Active Project: <strong>${esc(context.documentTitle || 'No document open')}</strong> (Revit ${esc(context.revitVersion || '2026')}).
-        I curate our firm's verified automation library.
+        I manage our firm's verified <strong>Tools &amp; Scripts</strong> (${tools.length}) and <strong>Central Families &amp; Blocks</strong> (${famCount}).
       </p>
       <div class="mt-2.5 grid grid-cols-2 gap-1.5 text-[11px]">
         ${activeCats.map(cat => `
-          <button onclick="selectCategory('${cat.id}'); switchTab('tools')" class="text-left p-1.5 bg-slate-50 border border-slate-200 rounded hover:bg-blue-50 hover:border-blue-300 transition">
+          <button onclick="selectCategory('${esc(cat.id)}'); switchTab('tools')" class="text-left p-1.5 bg-slate-50 border border-slate-200 rounded hover:bg-blue-50 hover:border-blue-300 transition">
             <div class="font-bold text-slate-800">${esc(cat.title)}</div>
             <div class="text-slate-500 text-[10px] truncate">${esc(cat.subtitle)}</div>
           </button>
         `).join('')}
       </div>
-      <p class="text-[11px] text-slate-500 mt-2">Ask me about specific tasks like <em>"renumber doors"</em>, <em>"audit rooms"</em>, or <em>"check model health"</em>.</p>
+      <div class="mt-2 flex items-center justify-between bg-indigo-50/70 border border-indigo-200 rounded-lg px-2.5 py-1.5 text-[11px]">
+        <span class="text-indigo-900 font-medium">Central Families &amp; Blocks (${famCount} items)</span>
+        <button onclick="switchTab('families')" class="text-indigo-700 font-bold hover:underline">Open Families →</button>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-2">Ask me for any tool, family, or block (e.g., <em>"renumber doors"</em>, <em>"find door family"</em>, or <em>"show furniture blocks"</em>).</p>
     `);
     return;
   }
@@ -3337,7 +3548,7 @@ function respondWithLocalRouter(text) {
       <div class="space-y-1">
         <p class="font-semibold text-slate-800">I recognise your request for <strong>Model Health &amp; Audit</strong>.</p>
         <p class="text-[11.5px] text-slate-600 leading-relaxed">
-          Launching our approved <strong>BIM Health Check</strong> native tool now to perform a complete model audit (integrity, warnings, purgeable elements, CAD imports, views, and overall health score) for <strong>${esc(context.documentTitle || 'the active model')}</strong>:
+          Launching our approved <strong>BIM Health Check</strong> native tool now to perform a complete model audit for <strong>${esc(context.documentTitle || 'the active model')}</strong>:
         </p>
       </div>
     `);
@@ -3350,7 +3561,6 @@ function respondWithLocalRouter(text) {
       alternatives: null
     });
 
-    // Execute automatically in Revit
     setTimeout(() => {
       executeToolConfirmed('bim-health-check');
     }, 350);
@@ -3358,21 +3568,73 @@ function respondWithLocalRouter(text) {
     return;
   }
 
-  // 4. Dynamic Tool Matching from loaded central catalog
-  const words = lower.split(/[^a-z0-9]+/).filter(w => w.length > 2);
-  const scored = tools.map(t => {
+  // 4. Check for Families & Blocks matches vs. Tools & Scripts matches
+  const explicitFamilyIntent = /\b(family|families|block|blocks|rfa|3dm|skp|component|components|place a|load a|insert a|furniture|chair|table|desk|window|column|beam|fixture)\b/i.test(lower);
+  const matchedFamilies = findMatchingFamilies(text);
+
+  const words = lower.split(/[^a-z0-9]+/).filter(w => w.length > 2 && !['the', 'and', 'for', 'how', 'can', 'you', 'find', 'get', 'show', 'load', 'place'].includes(w));
+  const scoredTools = tools.map(t => {
     let score = 0;
     const all = [t.title, t.name, t.intendedOutcome, t.description, t.category, ...(t.keywords || []), ...(t.tags || [])].join(' ').toLowerCase();
     for (const w of words) {
-      if (t.title.toLowerCase().includes(w)) score += 8;
+      if ((t.title || '').toLowerCase().includes(w)) score += 8;
       if ((t.category || '').toLowerCase().includes(w)) score += 4;
       if (all.includes(w)) score += 2;
     }
     return { t, score };
   }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
 
-  if (scored.length > 0) {
-    const top = scored[0].t;
+  // If the user asked for a family/block (or families matched when no tool matched, or both matched):
+  if (matchedFamilies.length > 0 && (explicitFamilyIntent || scoredTools.length === 0)) {
+    if (matchedFamilies.length === 1) {
+      const f = matchedFamilies[0];
+      addBot(`<p>I found the <strong>${esc(f.name)}</strong> (${esc(f.format)}) component in our <strong>${esc(f.category)}</strong> family library:</p>`);
+    } else {
+      addBot(`<p>I found <strong>${matchedFamilies.length} families/blocks</strong> in our Central Library matching <strong>"${esc(text)}"</strong>. You can load or place any of these options directly:</p>`);
+    }
+    renderFamilyChatCards(matchedFamilies, text);
+
+    // If there is also a strongly matching automation tool for the same keyword (e.g. "door" -> Door family + Renumber Doors script), show it below too!
+    if (scoredTools.length > 0 && scoredTools[0].score >= 8 && !/^(show|browse|list)\s+(available\s+)?(families|blocks)/i.test(lower)) {
+      const topTool = scoredTools[0].t;
+      addBot(`<p class="text-[11px] text-slate-600">We also have a related automation tool for <strong>${esc(topTool.title)}</strong>:</p>`);
+      renderContractCard({
+        matchedToolId: topTool.toolId,
+        why: topTool.intendedOutcome || topTool.description,
+        willChange: topTool.affectedData || (topTool.safetyLevel === 'ReadOnly' ? 'Read-only analysis.' : 'Modifies model parameters.'),
+        needs: topTool.packagesRequired || 'Active document open.'
+      });
+    }
+    return;
+  }
+
+  // If the user explicitly asked for families/blocks, but the central families folder is currently empty or has no match:
+  if (explicitFamilyIntent && scoredTools.length === 0) {
+    addBot(`
+      <div class="space-y-2">
+        <p class="font-semibold text-slate-800">No family or block found in the Central Library matching "${esc(text)}".</p>
+        <p class="text-[11.5px] text-slate-600 leading-relaxed">
+          ${(allFamilies || []).length === 0
+            ? 'Your Central Families &amp; Blocks folder does not have any indexed <code>.rfa</code>, <code>.dwg</code>, <code>.3dm</code>, or <code>.skp</code> files yet.'
+            : `We currently have ${(allFamilies || []).length} component(s) across our Central Families catalog, but none matched that keyword.`}
+        </p>
+        <div class="flex items-center gap-2 pt-1">
+          <button onclick="switchTab('families')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow-2xs">
+            Browse Families Tab
+          </button>
+          <button onclick="openFamiliesFolder()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold">
+            Open Families Folder
+          </button>
+        </div>
+      </div>
+    `);
+    icons();
+    return;
+  }
+
+  // 5. Dynamic Tool Matching from loaded central catalog
+  if (scoredTools.length > 0) {
+    const top = scoredTools[0].t;
     const isDyn = top.actionType === 'Dynamo';
     addBot(`
       <p>I found an approved automation in our Central Library for <strong>"${esc(text)}"</strong>:</p>
@@ -3383,55 +3645,48 @@ function respondWithLocalRouter(text) {
       why: top.intendedOutcome || top.description,
       willChange: top.affectedData || (top.safetyLevel === 'ReadOnly' ? 'Read-only analysis.' : 'Modifies model parameters.'),
       needs: top.packagesRequired || 'Active document open.',
-      alternatives: scored.length > 1 ? `Alternative: ${scored[1].t.title}` : null
+      alternatives: scoredTools.length > 1 ? `Alternative: ${scoredTools[1].t.title}` : null
     });
+
+    // If families also matched this keyword, offer them as options too!
+    if (matchedFamilies.length > 0) {
+      renderFamilyChatCards(matchedFamilies, text);
+    }
     return;
   }
 
-  // 4. If NO tool found: Context-aware guidance on how to make or link the script!
-  let suggestedCategory = 'Documentation';
-  let suggestedEngine = 'Dynamo';
-  let suggestedNodes = '';
+  // 6. If NO tool or family found: Never dump unsolicited code/scripts unless explicitly asked for code!
+  if (isExplicitCodeRequest(text)) {
+    addBot(`
+      <div class="space-y-1.5">
+        <p class="font-semibold text-slate-800">Starter Revit Python Snippet for "${esc(text)}":</p>
+        <pre class="p-2 bg-slate-900 text-slate-100 rounded text-[10.5px] font-mono overflow-x-auto">from Autodesk.Revit.DB import FilteredElementCollector, Transaction
+doc = __revit__.ActiveUIDocument.Document
 
-  if (/sheet|view|viewport|legend|titleblock/i.test(lower)) {
-    suggestedCategory = 'Documentation';
-    suggestedEngine = 'Dynamo';
-    suggestedNodes = 'Views/Sheets nodes: <code>Views</code> → <code>Sheet.ByNameNumber</code> → <code>Viewport.Create</code>';
-  } else if (/wall|floor|column|beam|slab|geometry|clash/i.test(lower)) {
-    suggestedCategory = 'Computational';
-    suggestedEngine = 'Dynamo';
-    suggestedNodes = 'Geometry nodes: <code>Categories</code> → <code>All Elements of Category</code> → <code>Element.Geometry</code> → <code>Geometry.Intersect</code>';
-  } else if (/parameter|shared parameter|schedule|export|excel/i.test(lower)) {
-    suggestedCategory = 'Quality & QA';
-    suggestedEngine = 'PyRevit';
-    suggestedNodes = 'Python API: <code>FilteredElementCollector(doc)</code> + <code>Transaction(doc)</code> to batch update parameter values.';
-  } else {
-    suggestedCategory = 'Central Library';
-    suggestedEngine = 'Dynamo';
-    suggestedNodes = 'Core nodes: <code>Categories</code> → <code>All Elements of Category</code> → <code>Element.Get/SetParameterByName</code>';
+t = Transaction(doc, "${esc(text)}")
+t.Start()
+# Add element logic here
+t.Commit()</pre>
+      </div>
+    `);
+    return;
   }
 
   addBot(`
     <div class="space-y-2">
-      <p class="font-semibold text-slate-800">No automation currently in Central Library matching "${esc(text)}".</p>
-      <div class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11.5px] text-slate-700 space-y-1.5">
-        <div class="font-bold text-blue-900 flex items-center gap-1.5">
-          <i data-lucide="wrench" class="w-3.5 h-3.5 text-blue-600"></i>How to Build &amp; Add This Tool:
-        </div>
-        <p>1. <strong>Recommended Platform:</strong> ${suggestedEngine} in <strong>${suggestedCategory}</strong>.</p>
-        <p>2. <strong>Logic Blueprint:</strong> ${suggestedNodes}</p>
-        <p>3. <strong>Save Path:</strong> Place your <code>.${suggestedEngine === 'Dynamo' ? 'dyn' : 'py'}</code> file into:
-          <br><code class="font-mono text-[10.5px] bg-slate-200 px-1 py-0.5 rounded text-slate-900">Central Scripts/${suggestedCategory}/${suggestedEngine}/&lt;YourToolName&gt;.${suggestedEngine === 'Dynamo' ? 'dyn' : 'py'}</code>
-        </p>
-        <p class="text-slate-500 text-[10.5px]">BIM Command Center will automatically index it into the catalog on next refresh!</p>
-      </div>
-
-      <div class="flex items-center gap-2 pt-1">
+      <p class="font-semibold text-slate-800">No tool, family, or block in the Central Library matched "${esc(text)}".</p>
+      <p class="text-[11.5px] text-slate-600 leading-relaxed">
+        Would you like to browse the existing catalog, register a file into the Central Library, or request this item for the team backlog?
+      </p>
+      <div class="flex flex-wrap items-center gap-1.5 pt-1">
         <button onclick="openSubmitModal('${esc(text).replace(/'/g, '&#39;')}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-xs font-semibold shadow-2xs">
-          Submit to Backlog
+          Request Tool / Family
         </button>
-        <button onclick="openFolderStructureModal()" class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-          <i data-lucide="book-open" class="w-3 h-3"></i>Folder Guide
+        <button onclick="switchTab('tools')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded text-xs font-semibold">
+          Browse Tools
+        </button>
+        <button onclick="switchTab('families')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded text-xs font-semibold border border-indigo-200">
+          Browse Families &amp; Blocks
         </button>
       </div>
     </div>
