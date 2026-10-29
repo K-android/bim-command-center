@@ -1101,20 +1101,27 @@ namespace BIMCommandCenter.Core.Catalog
             tool["executionMode"] = NormalizeMode(tool.Str("executionMode", "Interactive"));
             tool["status"] = tool.Str("status", "Active");
 
-            // Ensure category maps cleanly to one of the 6 core BIM domain categories
+            // If category is missing or generic ("General" / "Central Library"), auto-categorize;
+            // otherwise preserve explicit user/folder categories (mapping canonical aliases when applicable).
             string rawCat = tool.Str("category");
-            string mappedCat = TryMatchCanonicalCategory(rawCat);
-            if (!string.IsNullOrEmpty(mappedCat))
-            {
-                tool["category"] = mappedCat;
-            }
-            else
+            if (string.IsNullOrWhiteSpace(rawCat) ||
+                string.Equals(rawCat, "General", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(rawCat, "Central Library", StringComparison.OrdinalIgnoreCase) ||
+                Regex.IsMatch(rawCat, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton|nobutton)$", RegexOptions.IgnoreCase))
             {
                 tool["category"] = InferCategoryFromName(
                     tool.Str("title"),
                     tool.Str("description") + " " + string.Join(" ", tool.StrList("keywords")),
                     tool.Str("actionType"),
                     tool.Str("targetPath"));
+            }
+            else
+            {
+                string mappedCat = TryMatchCanonicalCategory(rawCat);
+                if (!string.IsNullOrEmpty(mappedCat))
+                {
+                    tool["category"] = mappedCat;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(tool.Str("toolId")))
@@ -1203,24 +1210,92 @@ namespace BIMCommandCenter.Core.Catalog
             return null;
         }
 
+        private static readonly HashSet<string> EngineFolderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Dynamo", "PyRevit", "Python", "Custom Addins", "CustomAddins", "Addins", "Add-ins", "Grasshopper", "Rhino", "Scripts"
+        };
+
         private static string DetermineCategory(string[] parts, string title, string description = null, string actionType = null, string targetPath = null)
         {
-            // 1. Only accept a folder part as an explicit category if it matches one of the 6 canonical BIM domain categories.
-            // Subfolders for add-ins (e.g. Custom Addins\MyAddin\MyAddin.dll) or pyRevit pushbuttons (e.g. PyRevit\MyTool.pushbutton\script.py)
-            // must NEVER become standalone categories on the homepage.
+            // Extract any user-created category folders in the path while ignoring:
+            //   1. Default engine folders (Dynamo, PyRevit, Custom Addins, Grasshopper, etc.)
+            //   2. PyRevit bundle folders (.pushbutton, .tab, .panel, .extension, or immediate parent folder of script.py)
+            //   3. C# add-in package folders (immediate parent folder holding the .dll/.addin and its dependencies)
+            var userCategoryFolders = new List<string>();
+
             if (parts != null && parts.Length > 0)
             {
-                foreach (var part in parts)
+                string fileName = !string.IsNullOrEmpty(targetPath) ? Path.GetFileName(targetPath) : "";
+                string ext = !string.IsNullOrEmpty(targetPath) ? Path.GetExtension(targetPath).ToLowerInvariant() : "";
+                bool isGenericPyRevitScript = fileName.Equals("script.py", StringComparison.OrdinalIgnoreCase) ||
+                                              fileName.EndsWith("_script.py", StringComparison.OrdinalIgnoreCase) ||
+                                              fileName.EndsWith(".pushbutton.py", StringComparison.OrdinalIgnoreCase);
+                bool isAddinBinary = string.Equals(actionType, "NativeAddin", StringComparison.OrdinalIgnoreCase) ||
+                                     ext == ".dll" || ext == ".addin";
+
+                for (int i = 0; i < parts.Length; i++)
                 {
-                    string matched = TryMatchCanonicalCategory(part);
-                    if (!string.IsNullOrEmpty(matched))
-                        return matched;
+                    string part = (parts[i] ?? "").Trim();
+                    if (string.IsNullOrEmpty(part)) continue;
+
+                    // Skip default engine folders
+                    if (EngineFolderNames.Contains(part)) continue;
+
+                    // Skip pyRevit bundle folders (.pushbutton, .tab, .panel, .extension, etc.) or internal lib/bin folders
+                    if (Regex.IsMatch(part, @"\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton|tab|panel|stack|extension|nobutton)$", RegexOptions.IgnoreCase) ||
+                        part.Equals("lib", StringComparison.OrdinalIgnoreCase) ||
+                        part.Equals("libs", StringComparison.OrdinalIgnoreCase) ||
+                        part.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                        part.Equals("hooks", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    bool isImmediateParent = (i == parts.Length - 1);
+                    if (isImmediateParent)
+                    {
+                        // If this is the immediate parent folder of script.py, that folder is the pushbutton itself, not a category folder
+                        if (isGenericPyRevitScript)
+                            continue;
+
+                        // If this is the immediate parent folder of a C# Add-in (.dll / .addin), check if it's the add-in's own package folder
+                        if (isAddinBinary && string.IsNullOrEmpty(TryMatchCanonicalCategory(part)))
+                        {
+                            bool hasScriptsInSameFolder = false;
+                            try
+                            {
+                                string parentDir = !string.IsNullOrEmpty(targetPath) ? Path.GetDirectoryName(targetPath) : null;
+                                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                                {
+                                    hasScriptsInSameFolder = Directory.EnumerateFiles(parentDir)
+                                        .Any(f => {
+                                            string e = Path.GetExtension(f).ToLowerInvariant();
+                                            return e == ".dyn" || e == ".py" || e == ".gh" || e == ".ghx";
+                                        });
+                                }
+                            }
+                            catch { }
+
+                            if (!hasScriptsInSameFolder)
+                                continue;
+                        }
+                    }
+
+                    userCategoryFolders.Add(part);
                 }
             }
 
-            // 2. Otherwise, infer the best domain category from title, folder context, description, and script/graph contents.
-            string folderContext = parts != null ? string.Join(" ", parts) : "";
-            return InferCategoryFromName(title, (description ?? "") + " " + folderContext, actionType, targetPath);
+            // 1. If the user placed the script/tool inside a custom folder, use that folder as the category!
+            if (userCategoryFolders.Count > 0)
+            {
+                string folderCategory = string.Join(" / ", userCategoryFolders);
+                string canonical = TryMatchCanonicalCategory(folderCategory);
+                return !string.IsNullOrEmpty(canonical) ? canonical : folderCategory;
+            }
+
+            // 2. Otherwise (script is outside category folders or no folders have been made in the central directory),
+            // auto-categorize into one of the 6 core BIM categories using keyword/content scoring!
+            return InferCategoryFromName(title, description, actionType, targetPath);
         }
 
         private static string NormalizeTokensForScoring(string input)

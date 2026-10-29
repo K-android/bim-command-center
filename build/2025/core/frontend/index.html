@@ -1188,7 +1188,8 @@ function updateAiBadge() {
 // ======================================================================
 function resolveCanonicalCategory(t) {
   if (!t) return 'Modeling';
-  const raw = (t.category || '').trim().toLowerCase();
+  const rawOrig = (t.category || '').trim();
+  const raw = rawOrig.toLowerCase();
   if (raw === 'documentation' || raw === 'documentation & sheets' || raw === 'docs' || raw === 'annotations') return 'Documentation';
   if (raw === 'modeling' || raw === 'modeling & geometry' || raw === 'geometry') return 'Modeling';
   if (raw === 'computational' || raw === 'computational design' || raw === 'parametric') return 'Computational';
@@ -1196,8 +1197,17 @@ function resolveCanonicalCategory(t) {
   if (raw === 'model maintenance' || raw === 'maintenance' || raw === 'hygiene' || raw === 'cleanup') return 'Model Maintenance';
   if (raw === 'collaboration' || raw === 'project setup & standards' || raw === 'collaboration & setup' || raw === 'coordination') return 'Collaboration';
 
-  // Fallback keyword scoring if a cached or custom tool has a non-standard folder name as its category
-  const text = ` ${[t.title, t.name, t.description, t.category, ...(t.tags || []), ...(t.keywords || [])].join(' ')} `
+  // If the tool is inside a user-created folder category (not empty, not generic, and not a .pushbutton bundle), keep that folder as its category!
+  const isEngineOrBundle = !rawOrig ||
+    raw === 'general' ||
+    raw === 'central library' ||
+    /\.(pushbutton|smartbutton|urlbutton|splitbutton|pulldown|linkbutton|tab|panel|stack|extension|nobutton)$/i.test(rawOrig);
+  if (!isEngineOrBundle) {
+    return rawOrig;
+  }
+
+  // Fallback keyword auto-sorting for scripts outside folders (or when no folders exist in the central directory)
+  const text = ` ${[t.title, t.name, t.description, ...(t.tags || []), ...(t.keywords || [])].join(' ')} `
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[^a-zA-Z0-9]+/g, ' ')
     .toLowerCase();
@@ -1307,9 +1317,61 @@ const CATEGORY_DEFINITIONS = [
 let currentSelectedCategory = null; // null = Homepage Grid, 'Documentation' | 'Computational' etc. = Library view
 
 function getActiveCategories() {
-  // Always return the 6 canonical BIM domain categories + All Automations
-  // (Never create separate cards for add-in folder names or .pushbutton folders)
-  return CATEGORY_DEFINITIONS.slice();
+  const validTools = tools.filter(t => t.toolId !== 'bim-health-check');
+  const autoPresets = CATEGORY_DEFINITIONS.filter(c => c.id !== 'All');
+  const autoNames = new Set(['documentation', 'modeling', 'computational', 'quality & qa', 'model maintenance', 'collaboration']);
+
+  // 1. Collect any user-created folder categories from the central directory
+  const customCats = [];
+  const seenCustom = new Set();
+  validTools.forEach(t => {
+    const resolved = resolveCanonicalCategory(t);
+    const lower = resolved.toLowerCase();
+    if (!autoNames.has(lower) && !seenCustom.has(lower)) {
+      seenCustom.add(lower);
+      customCats.push(resolved);
+    }
+  });
+
+  const palette = [
+    { radialBg: 'bg-teal-500', iconBg: 'bg-teal-100', iconColor: 'text-teal-700', pillBg: 'bg-teal-50', pillText: 'text-teal-700', borderHover: 'hover:border-teal-400', icon: 'folder-git-2' },
+    { radialBg: 'bg-indigo-500', iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700', pillBg: 'bg-indigo-50', pillText: 'text-indigo-700', borderHover: 'hover:border-indigo-400', icon: 'layers' },
+    { radialBg: 'bg-rose-500', iconBg: 'bg-rose-100', iconColor: 'text-rose-700', pillBg: 'bg-rose-50', pillText: 'text-rose-700', borderHover: 'hover:border-rose-400', icon: 'folder-kanban' },
+    { radialBg: 'bg-cyan-500', iconBg: 'bg-cyan-100', iconColor: 'text-cyan-700', pillBg: 'bg-cyan-50', pillText: 'text-cyan-700', borderHover: 'hover:border-cyan-400', icon: 'box' }
+  ];
+
+  const result = [];
+
+  // Add user-created folder categories first
+  customCats.forEach((catName, idx) => {
+    const style = palette[idx % palette.length];
+    result.push({
+      id: catName,
+      title: catName,
+      subtitle: `Central folder (${catName})`,
+      icon: style.icon,
+      radialBg: style.radialBg,
+      iconBg: style.iconBg,
+      iconColor: style.iconColor,
+      pillBg: style.pillBg,
+      pillText: style.pillText,
+      borderHover: style.borderHover,
+      match: (t) => resolveCanonicalCategory(t).toLowerCase() === catName.toLowerCase()
+    });
+  });
+
+  // If no custom folders have been made in the central directory, show all 6 auto-categories.
+  // If custom folders exist, only show auto-categories for scripts that are outside the custom folders!
+  autoPresets.forEach(cat => {
+    if (customCats.length === 0 || validTools.some(t => cat.match(t))) {
+      result.push(cat);
+    }
+  });
+
+  const allPreset = CATEGORY_DEFINITIONS.find(c => c.id === 'All');
+  if (allPreset) result.push(allPreset);
+
+  return result;
 }
 
 function renderCategoryGrid() {
